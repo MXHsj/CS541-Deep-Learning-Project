@@ -1,0 +1,4 @@
+*.pyc
+
+# ignore recorded ROS topic
+*.bag
