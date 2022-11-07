@@ -1,4 +1,9 @@
+# python
 *.pyc
+*-checkpoint.ipynb
 
 # ignore recorded ROS topic
 *.bag
+
+# tensorflow logs
+*.v2
