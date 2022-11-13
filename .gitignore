@@ -7,3 +7,6 @@
 
 # tensorflow logs
 *.v2
+
+# code editor
+/.vscode/*
