@@ -13,9 +13,9 @@ import numpy as np
 # TODO: use this script to process phantom data
 
 IMG_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/image')
-PLEURAL_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/masks/pleural_line')
-# RIB_LINE_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/masks/rib_line')
-RIB_SHADOW_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/masks/rib_shadow')
+PLEURAL_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/pleural_line')
+# RIB_LINE_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/rib_line')
+RIB_SHADOW_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/rib_shadow')
 MASK_PATH = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged')
 
 img_path_list = os.listdir(IMG_PATH)  # bmode image
@@ -47,6 +47,6 @@ for img_path in img_path_list:
   merge[pl[:] > 200] = 1                  # pleural line ==> 1
   merge[rs[:] > 200] = 2                  # rib shadow ==> 2
 
-  path2write = MASK_PATH + '/' + img_name + '_msk.jpg'
+  path2write = MASK_PATH + '/' + img_path
   cv2.imwrite(path2write, merge)
   print(f'new mask saved: {path2write}')
