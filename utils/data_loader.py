@@ -12,6 +12,7 @@ import torch
 import numpy as np
 from scipy import ndimage
 from torch.utils.data import Dataset
+from PIL import Image
 # from scipy.ndimage.interpolation import zoom
 
 
@@ -69,8 +70,28 @@ class LUSDataset(Dataset):
     self.INPUT_WIDTH = 128
 
   def preprocess(self, frame, isMsk=False):
-    processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
-    return processed
+    #processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
+    processed = frame.resize((self.INPUT_WIDTH, self.INPUT_HEIGHT), resample=Image.NEAREST if isMsk else Image.BICUBIC)
+
+    if isMsk:
+      print(f"mask: {processed.size}")
+    
+    print(f"img: {processed.size}")
+
+    processed_np = np.asarray(processed)
+
+    print(f"np_mask: {processed_np.shape}")
+
+    if not isMsk:
+            if processed_np.ndim == 2:
+                processed_np = processed_np[np.newaxis, ...]
+            else:
+                processed_np = processed_np.transpose((2, 0, 1))
+
+            processed_np = processed_np / 255
+            print(f"np_img: {processed_np.shape}")
+    
+    return processed_np
 
   def __len__(self):
     return len(os.listdir(self.img_dir))
@@ -80,11 +101,25 @@ class LUSDataset(Dataset):
     msk_names = os.listdir(self.msk_dir)
     print(self.img_dir+img_names[idx])
     print(self.msk_dir+msk_names[idx])
-    img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
-    msk = cv2.imread(self.img_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
-    assert (np.all(img.shape == msk.shape))
+    #img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_COLOR)
+    #msk = cv2.imread(self.img_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
+
+    msk = Image.open(self.img_dir+msk_names[idx]).convert('L')
+    img = Image.open(self.img_dir+img_names[idx])
+    print("Image size ------------")
+    #print(f"size of img: {img.size}")
+    #print(f"size of mask: {msk.size}")
+
+    #img = cv2.imread(self.img_dir+img_names[idx])
+    #msk = cv2.imread(self.img_dir+msk_names[idx])
+    #print("cv2 size------------")
+    #print(f"size of img: {img[0].shape}")
+    #print(f"size of mask: {msk[0].shape}")
+
+    #assert (np.all(img.shape == msk.shape))
+    assert (np.all(img.size == msk.size))
     img = self.preprocess(img)
-    msk = self.preprocess(msk, isMsk=True)
+    msk = self.preprocess(msk, isMsk=True) 
     return {
         'image': torch.as_tensor(img.copy()).float().contiguous(),
         'mask': torch.as_tensor(msk.copy()).long().contiguous()
@@ -94,7 +129,7 @@ class LUSDataset(Dataset):
     ...
 
 
-if __name__ == '__main__':
-  # test dataloader
-  dataset = LUSDataset()
-  dataset[0]
+#if __name__ == '__main__':
+#  # test dataloader
+#  dataset = LUSDataset()
+#  dataset[0]

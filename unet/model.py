@@ -101,14 +101,26 @@ class UNet(nn.Module):
     self.outc = OutConv(64, n_classes)
 
   def forward(self, x):
+    #print(f"input type: {type(x)}")
     x1 = self.inc(x)
+    #print(f"x1 type: {type(x1)}")
     x2 = self.down1(x1)
+    #print(f"x2 type: {type(x2)}")
     x3 = self.down2(x2)
+    #print(f"x3 type: {type(x3)}")
     x4 = self.down3(x3)
+    #print(f"x4 type: {type(x4)}")
     x5 = self.down4(x4)
+    #print(f"x5 type: {type(x5)}")
     x = self.up1(x5, x4)
+    #print(f"x up1 type: {type(x)}")
     x = self.up2(x, x3)
+    #print(f"x up2 type: {type(x)}")
     x = self.up3(x, x2)
+    #print(f"x up3 type: {type(x)}")
     x = self.up4(x, x1)
+    #print(f"x up4 type: {type(x)}")
     logits = self.outc(x)
-    return
+    #print(f"out type: {type(x)}")
+    #print(f"out: {logits}")
+    return logits

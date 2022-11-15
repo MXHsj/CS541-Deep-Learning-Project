@@ -1,5 +1,6 @@
 import argparse
-import logging
+#import logging
+import os
 import sys
 from pathlib import Path
 
@@ -8,39 +9,44 @@ import torch.nn as nn
 import torch.nn.functional as F
 # import wandb
 from torch import optim
-from torchvision.io import read_image
+#from torchvision.io import read_image
 from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
 
 # from utils.data_loading import BasicDataset, CarvanaDataset
 # from utils.dice_score import dice_loss
 # from evaluate import evaluate
-from unet import UNet
 
-dir_img = Path('./data/imgs/')
-dir_mask = Path('./data/masks/')
+from unet.model import UNet
+from utils.data_loader import LUSDataset
+from utils.dice_score import dice_loss
+from utils import evaluate
+from utils import show_img
+
+dir_img = Path('./data/imgs/') # dataset_patient/image
+dir_mask = Path('./data/masks/') # dataset_patient/mask_merged
 dir_checkpoint = Path('./checkpoints/')
 
 
-class CustomImageDataset(Dataset):
-  def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
-    self.img_labels = pd.read_csv(annotations_file)
-    self.img_dir = img_dir
-    self.transform = transform
-    self.target_transform = target_transform
-
-  def __len__(self):
-    return len(self.img_labels)
-
-  def __getitem__(self, idx):
-    img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
-    image = read_image(img_path)
-    label = self.img_labels.iloc[idx, 1]
-    if self.transform:
-      image = self.transform(image)
-    if self.target_transform:
-      label = self.target_transform(label)
-    return image, label
+#class CustomImageDataset(Dataset):
+#  def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
+#    self.img_labels = pd.read_csv(annotations_file)
+#    self.img_dir = img_dir
+#    self.transform = transform
+#    self.target_transform = target_transform
+#
+#  def __len__(self):
+#    return len(self.img_labels)
+#
+#  def __getitem__(self, idx):
+#    img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
+#    image = read_image(img_path)
+#    label = self.img_labels.iloc[idx, 1]
+#    if self.transform:
+#      image = self.transform(image)
+#    if self.target_transform:
+#      label = self.target_transform(label)
+#    return image, label
 
 
 def train_net(net,
@@ -50,14 +56,11 @@ def train_net(net,
               learning_rate: float = 1e-5,
               val_percent: float = 0.1,
               save_checkpoint: bool = True,
-              img_scale: float = 0.5,
+              #img_scale: float = 0.5,
               amp: bool = False):
   # 1. Create dataset
-  try:
-    dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
-  except (AssertionError, RuntimeError):
-    dataset = BasicDataset(dir_img, dir_mask, img_scale)
-
+  dataset = LUSDataset()
+  
   # 2. Split into train / validation partitions
   n_val = int(len(dataset) * val_percent)
   n_train = len(dataset) - n_val
@@ -69,12 +72,12 @@ def train_net(net,
   val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
   # (Initialize logging)
-  experiment = wandb.init(project='U-Net', resume='allow', anonymous='must')
-  experiment.config.update(dict(epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
-                                val_percent=val_percent, save_checkpoint=save_checkpoint, img_scale=img_scale,
-                                amp=amp))
+  #experiment = wandb.init(project='U-Net', resume='allow', anonymous='must')
+  #experiment.config.update(dict(epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
+  #                              val_percent=val_percent, save_checkpoint=save_checkpoint, img_scale=img_scale,
+  #                              amp=amp))
 
-  logging.info(f'''Starting training:
+  print(f'''Starting training:
         Epochs:          {epochs}
         Batch size:      {batch_size}
         Learning rate:   {learning_rate}
@@ -82,9 +85,20 @@ def train_net(net,
         Validation size: {n_val}
         Checkpoints:     {save_checkpoint}
         Device:          {device.type}
-        Images scaling:  {img_scale}
         Mixed Precision: {amp}
     ''')
+
+  #logging.info(f'''Starting training:
+  #      Epochs:          {epochs}
+  #      Batch size:      {batch_size}
+  #      Learning rate:   {learning_rate}
+  #      Training size:   {n_train}
+  #      Validation size: {n_val}
+  #      Checkpoints:     {save_checkpoint}
+  #      Device:          {device.type}
+  #      Images scaling:  {img_scale}
+  #      Mixed Precision: {amp}
+  #  ''')
 
   # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
   optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
@@ -101,6 +115,7 @@ def train_net(net,
       for batch in train_loader:
         images = batch['image']
         true_masks = batch['mask']
+        print(f"image shape: {images.shape}")
 
         assert images.shape[1] == net.n_channels, \
             f'Network has been defined with {net.n_channels} input channels, ' \
@@ -112,10 +127,25 @@ def train_net(net,
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
+          #print(f"type of images: {type(images)}")
+          #print(f"size of images: {images.size()}")
+          #print(f"type of true_masks: {type(true_masks)}")
+          #print(f"size of true_masks: {true_masks.size()}")
+          #print(f"shape of masks_pred: {masks_pred.shape}")
+          #print(f"type of mask: {type(true_masks[0])}")
+          print("loss part -----------------------")
+          print(f"mask shape: {true_masks[0].shape}")
+          #print(f"type of pred mask: {type(masks_pred[0])}")
+          print(f"pred mask shape: {masks_pred[0].shape}")
+
           loss = criterion(masks_pred, true_masks) \
               + dice_loss(F.softmax(masks_pred, dim=1).float(),
                           F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
                           multiclass=True)
+
+          #loss = dice_loss(F.softmax(masks_pred, dim=1).float(),
+          #                F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
+          #                multiclass=True)
 
         optimizer.zero_grad(set_to_none=True)
         grad_scaler.scale(loss).backward()
@@ -125,46 +155,63 @@ def train_net(net,
         pbar.update(images.shape[0])
         global_step += 1
         epoch_loss += loss.item()
-        experiment.log({
-            'train loss': loss.item(),
-            'step': global_step,
-            'epoch': epoch
-        })
+
+        print(f"train loss: {loss.item()}")
+        print(f"step: {global_step}")
+        print(f"epoch: {epoch}")
+
+        #logging.log({
+        #    'train loss': loss.item(),
+        #    'step': global_step,
+        #    'epoch': epoch
+        #})
         pbar.set_postfix(**{'loss (batch)': loss.item()})
 
         # Evaluation round
         division_step = (n_train // (10 * batch_size))
         if division_step > 0:
           if global_step % division_step == 0:
-            histograms = {}
-            for tag, value in net.named_parameters():
-              tag = tag.replace('/', '.')
-              if not torch.isinf(value).any():
-                histograms['Weights/' + tag] = wandb.Histogram(value.data.cpu())
-              if not torch.isinf(value.grad).any():
-                histograms['Gradients/' + tag] = wandb.Histogram(value.grad.data.cpu())
+            #histograms = {}
+            #for tag, value in net.named_parameters():
+            #  tag = tag.replace('/', '.')
+            #  if not torch.isinf(value).any():
+            #    histograms['Weights/' + tag] = wandb.Histogram(value.data.cpu())
+            #  if not torch.isinf(value.grad).any():
+            #    histograms['Gradients/' + tag] = wandb.Histogram(value.grad.data.cpu())
 
             val_score = evaluate(net, val_loader, device)
             scheduler.step(val_score)
 
-            logging.info('Validation Dice score: {}'.format(val_score))
-            experiment.log({
-                'learning rate': optimizer.param_groups[0]['lr'],
-                'validation Dice': val_score,
-                'images': wandb.Image(images[0].cpu()),
-                'masks': {
-                    'true': wandb.Image(true_masks[0].float().cpu()),
-                    'pred': wandb.Image(masks_pred.argmax(dim=1)[0].float().cpu()),
-                },
-                'step': global_step,
-                'epoch': epoch,
-                **histograms
-            })
+            print(f"Validation Dice score: {val_score}")
+            print(f'''Validation info:
+                  Learning rate: {optimizer.param_groups[0]['lr']}
+                  Validation Dice: {val_score}
+                  Step: {global_step}
+                  Epoch: {epoch}
+            ''')
+            show_img(images[0], "images")
+            show_img(true_masks[0].float(), "masks_true")
+            show_img(masks_pred.argmax(dim=1)[0].float(), "masks_pred")
+            
+            #logging.info('Validation Dice score: {}'.format(val_score))
+            #logging.log({
+            #    'learning rate': optimizer.param_groups[0]['lr'],
+            #    'validation Dice': val_score,
+            #    'images': Image(images[0].cpu()),
+            #    'masks': {
+            #        'true': wandb.Image(true_masks[0].float().cpu()),
+            #        'pred': wandb.Image(masks_pred.argmax(dim=1)[0].float().cpu()),
+            #    },
+            #    'step': global_step,
+            #    'epoch': epoch,
+            #    **histograms
+            #})
 
     if save_checkpoint:
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
       torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
-      logging.info(f'Checkpoint {epoch} saved!')
+      print(f"Checkpoint {epoch} saved!")
+      #logging.info(f'Checkpoint {epoch} saved!')
 
 
 def get_args():
@@ -179,7 +226,7 @@ def get_args():
                       help='Percent of the data that is used as validation (0-100)')
   parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
   parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
-  parser.add_argument('--classes', '-c', type=int, default=2, help='Number of classes')
+  parser.add_argument('--classes', '-c', type=int, default=3, help='Number of classes')
 
   return parser.parse_args()
 
@@ -187,23 +234,32 @@ def get_args():
 if __name__ == '__main__':
   args = get_args()
 
-  logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+  #logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-  logging.info(f'Using device {device}')
+  print(f"Using device {device}")
+  #logging.info(f'Using device {device}')
 
   # Change here to adapt to your data
   # n_channels=3 for RGB images
+  # n_channels=1 for grey images
   # n_classes is the number of probabilities you want to get per pixel
   net = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
 
-  logging.info(f'Network:\n'
-               f'\t{net.n_channels} input channels\n'
-               f'\t{net.n_classes} output channels (classes)\n'
-               f'\t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling')
+  print(f'''Network:\n
+        \t{net.n_channels} input channels\n
+        \t{net.n_classes} output channels (classes)\n
+        \t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling
+  ''')
+
+  #logging.info(f'Network:\n'
+  #             f'\t{net.n_channels} input channels\n'
+  #             f'\t{net.n_classes} output channels (classes)\n'
+  #             f'\t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling')
 
   if args.load:
     net.load_state_dict(torch.load(args.load, map_location=device))
-    logging.info(f'Model loaded from {args.load}')
+    print(f"Model loaded from {args.load}")
+    #logging.info(f'Model loaded from {args.load}')
 
   net.to(device=device)
   try:
@@ -212,10 +268,11 @@ if __name__ == '__main__':
               batch_size=args.batch_size,
               learning_rate=args.lr,
               device=device,
-              img_scale=args.scale,
+              #img_scale=args.scale,
               val_percent=args.val / 100,
               amp=args.amp)
   except KeyboardInterrupt:
     torch.save(net.state_dict(), 'INTERRUPTED.pth')
-    logging.info('Saved interrupt')
+    print(f"Saved interrupt")
+    #logging.info('Saved interrupt')
     raise
