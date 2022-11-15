@@ -1,6 +1,7 @@
 # python
 *.pyc
 *-checkpoint.ipynb
+*.pth
 
 # ignore recorded ROS topic
 *.bag

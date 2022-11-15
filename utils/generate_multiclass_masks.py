@@ -46,6 +46,7 @@ for img_path in img_path_list:
   merge = np.zeros([h, w, 1], np.uint8)   # background ==> 0
   merge[pl[:] > 200] = 1                  # pleural line ==> 1
   merge[rs[:] > 200] = 2                  # rib shadow ==> 2
+  print(f'mask max val: {np.max(merge)}')
 
   path2write = MASK_PATH + '/' + img_path
   cv2.imwrite(path2write, merge)
