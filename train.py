@@ -25,6 +25,7 @@ from utils.data_loader import LUSDataset
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
 from utils.show_img import imshow
+from utils.fig_plot import show_fig
 
 dir_img = Path('./data/imgs/')  # dataset_patient/image
 dir_mask = Path('./data/masks/')  # dataset_patient/mask_merged
@@ -192,9 +193,12 @@ def train_net(net,
                   Step: {global_step}
                   Epoch: {epoch}
             ''')
-            imshow(images[0], "images")
-            imshow(true_masks[0].float(), "masks_true")
-            imshow(masks_pred.argmax(dim=1)[0].float(), "masks_pred")
+
+            image = imshow(images[0].float(), "images")
+            true_mask = imshow(true_masks[0].float(), "masks_true")
+            pred_mask = imshow(masks_pred.argmax(dim=1)[0].float(), "masks_pred")
+
+            show_fig(epoch, global_step, image, true_mask, pred_mask)
 
             #logging.info('Validation Dice score: {}'.format(val_score))
             # logging.log({
@@ -246,7 +250,7 @@ if __name__ == '__main__':
   # n_channels=3 for RGB images
   # n_channels=1 for grey images
   # n_classes is the number of probabilities you want to get per pixel
-  net = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
+  net = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
 
   print(f'''Network:\n
         \t{net.n_channels} input channels\n
