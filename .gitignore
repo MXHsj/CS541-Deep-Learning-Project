@@ -1,6 +1,7 @@
 # python
 *.pyc
 *-checkpoint.ipynb
+*.pth
 
 # ignore recorded ROS topic
 *.bag
@@ -9,4 +10,8 @@
 *.v2
 
 # code editor
-/.vscode/*
+.vscode/*
+.ipynb_checkpoints/*
+
+# mac
+.DS_Store
