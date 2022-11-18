@@ -1,3 +1,3 @@
 # lung-ultrasound image segmentation
-This branch hosts stable model
+This branch tests different models: TransUNet
 
