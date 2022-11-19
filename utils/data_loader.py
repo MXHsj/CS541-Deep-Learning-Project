@@ -105,7 +105,7 @@ class LUSDataset(Dataset):
     print(self.img_dir+img_names[idx])
     print(self.msk_dir+msk_names[idx])
     msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
-    #img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_COLOR)  # TODO: use grayscale input
+    # img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_COLOR)  # TODO: use grayscale input
 
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
     # msk = Image.open(self.img_dir+msk_names[idx]).convert('L')

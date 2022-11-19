@@ -6,51 +6,23 @@
 # version:
 # =======================================================================
 import argparse
-#import logging
-import os
-import sys
+from tqdm import tqdm
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# import wandb
-from torch import optim
-#from torchvision.io import read_image
-from torch.utils.data import Dataset, DataLoader, random_split
-from tqdm import tqdm
+from torch.utils.data import DataLoader, random_split
 
 from unet.model import UNet
 from utils.data_loader import LUSDataset
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
-from utils.show_img import imshow
-from utils.fig_plot import show_fig
+from utils.vis import tensor2PIL, save_fig
 
 dir_img = Path('./data/imgs/')  # dataset_patient/image
 dir_mask = Path('./data/masks/')  # dataset_patient/mask_merged
 dir_checkpoint = Path('./checkpoints/')
-
-
-# class CustomImageDataset(Dataset):
-#  def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
-#    self.img_labels = pd.read_csv(annotations_file)
-#    self.img_dir = img_dir
-#    self.transform = transform
-#    self.target_transform = target_transform
-#
-#  def __len__(self):
-#    return len(self.img_labels)
-#
-#  def __getitem__(self, idx):
-#    img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
-#    image = read_image(img_path)
-#    label = self.img_labels.iloc[idx, 1]
-#    if self.transform:
-#      image = self.transform(image)
-#    if self.target_transform:
-#      label = self.target_transform(label)
-#    return image, label
 
 
 def train_net(net,
@@ -92,21 +64,9 @@ def train_net(net,
         Mixed Precision: {amp}
     ''')
 
-  # logging.info(f'''Starting training:
-  #      Epochs:          {epochs}
-  #      Batch size:      {batch_size}
-  #      Learning rate:   {learning_rate}
-  #      Training size:   {n_train}
-  #      Validation size: {n_val}
-  #      Checkpoints:     {save_checkpoint}
-  #      Device:          {device.type}
-  #      Images scaling:  {img_scale}
-  #      Mixed Precision: {amp}
-  #  ''')
-
   # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
-  optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
-  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
+  optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
+  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
   grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
   criterion = nn.CrossEntropyLoss()
   global_step = 0
@@ -147,10 +107,6 @@ def train_net(net,
                           F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
                           multiclass=True)
 
-          # loss = dice_loss(F.softmax(masks_pred, dim=1).float(),
-          #                F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
-          #                multiclass=True)
-
         optimizer.zero_grad(set_to_none=True)
         grad_scaler.scale(loss).backward()
         grad_scaler.step(optimizer)
@@ -163,26 +119,12 @@ def train_net(net,
         print(f"train loss: {loss.item()}")
         print(f"step: {global_step}")
         print(f"epoch: {epoch}")
-
-        # logging.log({
-        #    'train loss': loss.item(),
-        #    'step': global_step,
-        #    'epoch': epoch
-        # })
         pbar.set_postfix(**{'loss (batch)': loss.item()})
 
         # Evaluation round
         division_step = (n_train // (10 * batch_size))
         if division_step > 0:
           if global_step % division_step == 0:
-            #histograms = {}
-            # for tag, value in net.named_parameters():
-            #  tag = tag.replace('/', '.')
-            #  if not torch.isinf(value).any():
-            #    histograms['Weights/' + tag] = wandb.Histogram(value.data.cpu())
-            #  if not torch.isinf(value.grad).any():
-            #    histograms['Gradients/' + tag] = wandb.Histogram(value.grad.data.cpu())
-
             val_score = evaluate_dice(net, val_loader, device)
             scheduler.step(val_score)
 
@@ -194,25 +136,13 @@ def train_net(net,
                   Epoch: {epoch}
             ''')
 
-            image = imshow(images[0].float(), "images")
-            true_mask = imshow(true_masks[0].float(), "masks_true")
-            pred_mask = imshow(masks_pred.argmax(dim=1)[0].float(), "masks_pred")
-
-            show_fig(epoch, global_step, image, true_mask, pred_mask)
-
-            #logging.info('Validation Dice score: {}'.format(val_score))
-            # logging.log({
-            #    'learning rate': optimizer.param_groups[0]['lr'],
-            #    'validation Dice': val_score,
-            #    'images': Image(images[0].cpu()),
-            #    'masks': {
-            #        'true': wandb.Image(true_masks[0].float().cpu()),
-            #        'pred': wandb.Image(masks_pred.argmax(dim=1)[0].float().cpu()),
-            #    },
-            #    'step': global_step,
-            #    'epoch': epoch,
-            #    **histograms
-            # })
+            # ====== showing figures will cause thread issue ======
+            image = tensor2PIL(images[0].float())
+            true_mask = tensor2PIL(true_masks[0].float())
+            # pred_mask = tensor2PIL(masks_pred.argmax(dim=1)[0].float())
+            pred_mask = tensor2PIL(masks_pred[0].float())
+            save_fig(epoch, global_step, image, true_mask, pred_mask)
+            # =====================================================
 
     if save_checkpoint:
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
@@ -258,11 +188,6 @@ if __name__ == '__main__':
         \t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling
   ''')
 
-  # logging.info(f'Network:\n'
-  #             f'\t{net.n_channels} input channels\n'
-  #             f'\t{net.n_classes} output channels (classes)\n'
-  #             f'\t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling')
-
   if args.load:
     net.load_state_dict(torch.load(args.load, map_location=device))
     print(f"Model loaded from {args.load}")
@@ -283,3 +208,6 @@ if __name__ == '__main__':
     print(f"Saved interrupt")
     #logging.info('Saved interrupt')
     raise
+
+  finally:
+    pass

@@ -1,17 +1,22 @@
 # python
 *.pyc
 *-checkpoint.ipynb
-*.pth
+.ipynb_checkpoints/*
 
-# ignore recorded ROS topic
+# ROS
 *.bag
 
-# tensorflow logs
+# tensorflow intermediate files
 *.v2
 
-# code editor
-.vscode/*
-.ipynb_checkpoints/*
+# pytorch intermediate files
+*.pth
+
+# tensorboard
+tensorboard/
 
 # mac
 .DS_Store
+
+# multi-media
+# *.png
