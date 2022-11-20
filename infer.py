@@ -13,6 +13,7 @@ import torch
 import argparse
 import numpy as np
 from unet.model import UNet
+import torch.nn.functional as F
 from utils.vis import array2tensor, tensor2array
 
 
@@ -45,5 +46,5 @@ for _ in range(100):
 
   print(f'time elapsed: {time.perf_counter()-start} sec')  # benchmarking
 
-# cv2.imwrite('test_pleural_line_out.png', pl)
-# cv2.imwrite('test_rib_shadow_out.png', rs)
+cv2.imwrite('test_pleural_line_out.png', pl)
+cv2.imwrite('test_rib_shadow_out.png', rs)

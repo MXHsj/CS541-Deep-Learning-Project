@@ -73,18 +73,13 @@ class LUSDataset(Dataset):
     processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
     if isMsk:
       processed[processed > 2] = 0  # force two classes
-      # print(f"mask: {processed.size}")
-      print(f"mask: {processed.shape}")
-    # print(f"img: {processed.size}")
     processed_np = processed.copy()
-    print(f"np_mask: {processed_np.shape}")
     if not isMsk:
       if processed_np.ndim == 2:
         processed_np = processed_np[np.newaxis, ...]
       else:
         processed_np = processed_np.transpose((2, 0, 1))
       processed_np = processed_np / 255  # normalize
-      print(f"np_img: {processed_np.shape}")
     return processed_np
 
   def __len__(self):
@@ -122,9 +117,3 @@ class LUSDataset(Dataset):
 
   def view_item(self, idx):
     ...
-
-
-# if __name__ == '__main__':
-#  # test dataloader
-#  dataset = LUSDataset()
-#  dataset[0]

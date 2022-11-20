@@ -5,15 +5,19 @@
 # date:         2022-11-13
 # version:
 # =======================================================================
+import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')   # turn off display to avoid multi-threading error
+
+unload = transforms.ToPILImage()
 
 
-def array2tensor(array: np.array, device="cpu") -> torch.tensor:
+def array2tensor(array: np.array, device=torch.device('cpu')) -> torch.tensor:
   ''' convert input image in numpy array to tensor
   :param array:   input image (W x H)
   :param device:  "cpu" / "cuda"
@@ -25,37 +29,40 @@ def array2tensor(array: np.array, device="cpu") -> torch.tensor:
   return tensor
 
 
-def tensor2array(tensor: torch.tensor, device="cpu") -> np.array:
+def tensor2array(tensor: torch.tensor, device=torch.device('cpu')) -> np.array:
   ''' convert input image in tensor to numpy array
   :param tensor:  input image (1 x 1 x W x H)
   :param device:  "cpu" / "cuda"
   :return:        image in numpy array that can be directly displayed (W x H)
   '''
-  if device == "cpu":
+  if device.type == 'cpu':
     array = tensor.cpu().clone().detach().numpy()
-  elif device == "cuda":
+  elif device.type == 'cuda':
     array = tensor.clone().detach().numpy()
+  else:
+    print(f'invalid device: {device}')
   array = np.squeeze(array)
   return array
 
 
-def tensor2PIL(tensor: torch.tensor, device="cuda") -> Image:
+def tensor2PIL(tensor: torch.tensor, device=torch.device('cuda')) -> Image:
   ''' convert input array in tensor to PIL Image
   :param:
   :param:
   :return: image in PIL Image that can be directly displayed (W x H)
   '''
-  image = tensor.clone()  # do not specify cpu to avoid threading error when using gpu
+  if device.type == 'cpu':
+    image = tensor.cpu().clone()
+  elif device.type == 'cuda':
+    image = tensor.cuda().clone()
+  else:
+    print(f'invalid device: {device}')
   image = image.squeeze(0)
-  image = transforms.ToPILImage()(image)
+  image = unload(image)
   return image
 
 
-def plot_segmentation(epoch, global_step, image: Image, mask: Image, pred_mask: Image, showNow=False) -> None:
-  # TODO:
-  # - merge file name string as one input
-  # -
-
+def plot_segmentation(out_file_tag: str, image: Image, mask: Image, pred_mask: Image) -> None:
   save_path = './training_log/'
   # create figure
   fig = plt.figure(figsize=(10, 7))
@@ -88,8 +95,4 @@ def plot_segmentation(epoch, global_step, image: Image, mask: Image, pred_mask: 
   plt.axis('off')
   plt.title("Pred_mask")
 
-  if showNow:
-    plt.pause(0.001)
-
-  plt.savefig(save_path + 'epoch_' + str(epoch) + '_step_' + str(global_step) + '.png')
-  plt.close()
+  plt.savefig(save_path + out_file_tag + '.png')

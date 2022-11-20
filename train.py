@@ -84,21 +84,15 @@ def train_net(net,
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
-          #print(f"type of images: {type(images)}")
-          #print(f"size of images: {images.size()}")
-          #print(f"type of masks_true: {type(masks_true)}")
-          #print(f"size of masks_true: {masks_true.size()}")
-          #print(f"shape of masks_pred: {masks_pred.shape}")
-          #print(f"type of mask: {type(masks_true[0])}")
           print("loss part -----------------------")
           print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
-          #print(f"type of pred mask: {type(masks_pred[0])}")
-          print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0])}")
-
-          loss = criterion(masks_pred, masks_true) \
-              + dice_loss(F.softmax(masks_pred, dim=1).float(),
-                          F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
-                          multiclass=True)
+          print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
+          loss_CE = criterion(masks_pred, masks_true)
+          loss_dice = dice_loss(masks_pred.float(),
+                                F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
+                                multiclass=True)
+          loss = loss_CE + loss_dice
+          print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
 
         optimizer.zero_grad(set_to_none=True)
         grad_scaler.scale(loss).backward()
@@ -109,7 +103,6 @@ def train_net(net,
         global_step += 1
         epoch_loss += loss.item()
 
-        print(f"train loss: {loss.item()}")
         print(f"step: {global_step}")
         print(f"epoch: {epoch}")
         pbar.set_postfix(**{'loss (batch)': loss.item()})
@@ -120,7 +113,6 @@ def train_net(net,
           if global_step % division_step == 0:
             val_score = evaluate_dice(net, val_loader, device)
             scheduler.step(val_score)
-
             print(f"Validation Dice score: {val_score}")
             print(f'''Validation info:
                   Learning rate: {optimizer.param_groups[0]['lr']}
@@ -128,13 +120,13 @@ def train_net(net,
                   Step: {global_step}
                   Epoch: {epoch}
             ''')
-
-            # ====== showing figures will cause thread issue ======
-            image = tensor2PIL(images[0].float())
-            mask_true = tensor2PIL(masks_true[0].float())
-            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float())
-            plot_segmentation(epoch, global_step, image, mask_true, mask_pred)
-            # =====================================================
+            # # ====== save figures ======
+            image = tensor2PIL(images[0].float(), device=device)
+            mask_true = tensor2PIL(masks_true[0].float(), device=device)
+            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float(), device=device)
+            tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
+            plot_segmentation(tag, image, mask_true, mask_pred)
+            # # ==========================
 
     if save_checkpoint:
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
@@ -144,8 +136,8 @@ def train_net(net,
 
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
-  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=1, help='Batch size')
+  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
+  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
   parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
                       help='Learning rate', dest='lr')
   parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
