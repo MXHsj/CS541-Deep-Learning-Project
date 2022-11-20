@@ -18,10 +18,8 @@ from unet.model import UNet
 from utils.data_loader import LUSDataset
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
-from utils.vis import tensor2PIL, save_fig
+from utils.vis import tensor2PIL, plot_segmentation
 
-dir_img = Path('./data/imgs/')  # dataset_patient/image
-dir_mask = Path('./data/masks/')  # dataset_patient/mask_merged
 dir_checkpoint = Path('./checkpoints/')
 
 
@@ -48,11 +46,6 @@ def train_net(net,
   val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
   # (Initialize logging)
-  #experiment = wandb.init(project='U-Net', resume='allow', anonymous='must')
-  # experiment.config.update(dict(epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
-  #                              val_percent=val_percent, save_checkpoint=save_checkpoint, img_scale=img_scale,
-  #                              amp=amp))
-
   print(f'''Starting training:
         Epochs:          {epochs}
         Batch size:      {batch_size}
@@ -78,7 +71,7 @@ def train_net(net,
     with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
       for batch in train_loader:
         images = batch['image']
-        true_masks = batch['mask']
+        masks_true = batch['mask']
         print(f"image shape: {images.shape}")
 
         assert images.shape[1] == net.n_channels, \
@@ -87,24 +80,24 @@ def train_net(net,
             'the images are loaded correctly.'
 
         images = images.to(device=device, dtype=torch.float32)
-        true_masks = true_masks.to(device=device, dtype=torch.long)
+        masks_true = masks_true.to(device=device, dtype=torch.long)
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
           #print(f"type of images: {type(images)}")
           #print(f"size of images: {images.size()}")
-          #print(f"type of true_masks: {type(true_masks)}")
-          #print(f"size of true_masks: {true_masks.size()}")
+          #print(f"type of masks_true: {type(masks_true)}")
+          #print(f"size of masks_true: {masks_true.size()}")
           #print(f"shape of masks_pred: {masks_pred.shape}")
-          #print(f"type of mask: {type(true_masks[0])}")
+          #print(f"type of mask: {type(masks_true[0])}")
           print("loss part -----------------------")
-          print(f"mask shape: {true_masks[0].shape}, max val: {torch.max(true_masks[0])}")
+          print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
           #print(f"type of pred mask: {type(masks_pred[0])}")
-          print(f"pred mask shape: {masks_pred[0].shape}, max val: {torch.max(masks_pred[0])}")
+          print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0])}")
 
-          loss = criterion(masks_pred, true_masks) \
+          loss = criterion(masks_pred, masks_true) \
               + dice_loss(F.softmax(masks_pred, dim=1).float(),
-                          F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
+                          F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
                           multiclass=True)
 
         optimizer.zero_grad(set_to_none=True)
@@ -138,24 +131,22 @@ def train_net(net,
 
             # ====== showing figures will cause thread issue ======
             image = tensor2PIL(images[0].float())
-            true_mask = tensor2PIL(true_masks[0].float())
-            # pred_mask = tensor2PIL(masks_pred.argmax(dim=1)[0].float())
-            pred_mask = tensor2PIL(masks_pred[0].float())
-            save_fig(epoch, global_step, image, true_mask, pred_mask)
+            mask_true = tensor2PIL(masks_true[0].float())
+            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float())
+            plot_segmentation(epoch, global_step, image, mask_true, mask_pred)
             # =====================================================
 
     if save_checkpoint:
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
       torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
       print(f"Checkpoint {epoch} saved!")
-      #logging.info(f'Checkpoint {epoch} saved!')
 
 
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
   parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
   parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=1, help='Batch size')
-  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-5,
+  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
                       help='Learning rate', dest='lr')
   parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
   parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
@@ -170,11 +161,8 @@ def get_args():
 
 if __name__ == '__main__':
   args = get_args()
-
-  #logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   print(f"Using device {device}")
-  #logging.info(f'Using device {device}')
 
   # Change here to adapt to your data
   # n_channels=3 for RGB images
@@ -204,7 +192,7 @@ if __name__ == '__main__':
               val_percent=args.val / 100,
               amp=args.amp)
   except KeyboardInterrupt:
-    torch.save(net.state_dict(), 'INTERRUPTED.pth')
+    torch.save(net.state_dict(), str(dir_checkpoint/'INTERRUPTED.pth'))
     print(f"Saved interrupt")
     #logging.info('Saved interrupt')
     raise

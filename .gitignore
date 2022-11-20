@@ -10,7 +10,7 @@
 *.v2
 
 # pytorch intermediate files
-*.pth
+checkpoints/
 
 # tensorboard
 tensorboard/
@@ -19,4 +19,4 @@ tensorboard/
 .DS_Store
 
 # multi-media
-# *.png
+*.png

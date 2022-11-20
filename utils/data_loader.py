@@ -71,29 +71,20 @@ class LUSDataset(Dataset):
 
   def preprocess(self, frame, isMsk=False):
     processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
-    # processed = frame.resize((self.INPUT_WIDTH, self.INPUT_HEIGHT), resample=Image.NEAREST if isMsk else Image.BICUBIC)
-
     if isMsk:
       processed[processed > 2] = 0  # force two classes
       # print(f"mask: {processed.size}")
       print(f"mask: {processed.shape}")
-
     # print(f"img: {processed.size}")
-
-    # processed_np = np.asarray(processed)
     processed_np = processed.copy()
-
     print(f"np_mask: {processed_np.shape}")
-
     if not isMsk:
       if processed_np.ndim == 2:
         processed_np = processed_np[np.newaxis, ...]
       else:
         processed_np = processed_np.transpose((2, 0, 1))
-
-      processed_np = processed_np / 255
+      processed_np = processed_np / 255  # normalize
       print(f"np_img: {processed_np.shape}")
-
     return processed_np
 
   def __len__(self):
@@ -102,11 +93,9 @@ class LUSDataset(Dataset):
   def __getitem__(self, idx):
     img_names = os.listdir(self.img_dir)
     msk_names = os.listdir(self.msk_dir)
-    print(self.img_dir+img_names[idx])
-    print(self.msk_dir+msk_names[idx])
+    # print(self.img_dir+img_names[idx])
+    # print(self.msk_dir+msk_names[idx])
     msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
-    # img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_COLOR)  # TODO: use grayscale input
-
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
     # msk = Image.open(self.img_dir+msk_names[idx]).convert('L')
     # img = Image.open(self.img_dir+img_names[idx])
