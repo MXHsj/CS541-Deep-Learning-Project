@@ -69,17 +69,20 @@ class Up(nn.Module):
 
 
 class OutConv(nn.Module):
-  def __init__(self, in_channels, out_channels):
+  def __init__(self, in_channels, out_channels, encoder=True):
     super(OutConv, self).__init__()
     self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+    self.encoder=encoder
 
   def forward(self, x):
     # return self.conv(x)
-    return F.softmax(self.conv(x), dim=1)  # normalize class probabilities
-
+    if not self.encoder:
+      return F.softmax(self.conv(x), dim=1)  # normalize class probabilities
+    else:
+      return self.conv(x)
 
 class UNet(nn.Module):
-  def __init__(self, n_channels, n_classes, bilinear=False):
+  def __init__(self, n_channels, n_classes, encoder=True, bilinear=False):
     super(UNet, self).__init__()
     self.n_channels = n_channels
     self.n_classes = n_classes
@@ -95,7 +98,7 @@ class UNet(nn.Module):
     self.up2 = Up(512, 256 // factor, bilinear)
     self.up3 = Up(256, 128 // factor, bilinear)
     self.up4 = Up(128, 64, bilinear)
-    self.outc = OutConv(64, n_classes)
+    self.outc = OutConv(64, n_classes, encoder=encoder)
 
   def forward(self, x):
     #print(f"input type: {type(x)}")
