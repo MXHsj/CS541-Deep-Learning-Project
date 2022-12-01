@@ -73,7 +73,7 @@ class LUSDataset(Dataset):
       if encoder:
         print('load patient data')
         self.img_dir = './dataset_patient_nolabel/image/'
-        self.msk_dir = './dataset_patient_nolabel/mask/'
+        self.msk_dir = './dataset_patient_nolabel/image/'
       else:
         self.img_dir = './dataset_patient/image/'
         self.msk_dir = './dataset_patient/mask/'
