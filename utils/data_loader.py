@@ -2,7 +2,7 @@
 # file name:    data_loader.py
 # description:  implement dataloader for pytorch
 # authors:      Xihan Ma, Mingjie Zeng, Xiaofan Zhou
-# date:         2022-11-13
+# date:         2022-11-30
 # version:
 # =======================================================================
 import os
@@ -39,9 +39,9 @@ def random_deform(image, label):
 
 
 class RandomGenerator(object):
-  def __init__(self, output_size):
+  def __init__(self, output_size,encoder):
     self.output_size = output_size
-
+    self.encoder = encoder
   def __call__(self, sample):
     image, label = sample['image'], sample['label']
 
@@ -53,7 +53,10 @@ class RandomGenerator(object):
     if x != self.output_size[0] or y != self.output_size[1]:
       image = zoom(image, (self.output_size[0] / x, self.output_size[1] / y), order=3)  # why not 3?
       #label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
-      label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=0)
+      if self.encoder:
+        label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=3)
+      else:
+        label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=0)
     image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
     label = torch.from_numpy(label.astype(np.float32))
     sample = {'image': image, 'label': label.long()}
@@ -61,21 +64,27 @@ class RandomGenerator(object):
 
 
 class LUSDataset(Dataset):
-  def __init__(self, use_patient_data=True):
+  def __init__(self, use_patient_data=True,encoder=True):
     """ 
     :use_patient_data:
     """
+    self.encoder=encoder
     if use_patient_data:
-      print('load patient data')
-      self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
-      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged/')
-    assert (len(os.listdir(self.img_dir)) == len(os.listdir(self.msk_dir)))
+      if encoder:
+        print('load patient data')
+        self.img_dir = '../dataset_patient_nolabel/image/'
+        self.msk_dir = '../dataset_patient_nolabel/mask/'
+      else:
+        self.img_dir = '../input/LUS_patient_baseline/dataset/image/'
+        self.msk_dir = '../input/LUS_patient_baseline/dataset/mask/'
+    self.sample_list=os.listdir(self.msk_dir)
 
-    self.INPUT_HEIGHT = 128
-    self.INPUT_WIDTH = 128
+    self.INPUT_HEIGHT = 224
+    self.INPUT_WIDTH = 224
 
   def preprocess(self, frame, isMsk=False):
-    processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
+    x,y=frame.shape
+    processed = zoom(frame, (self.INPUT_HEIGHT / x, self.INPUT_WIDTH / y), order=3)
     if isMsk:
       processed[processed > 2] = 0  # force two classes
     processed_np = processed.copy()
@@ -88,26 +97,19 @@ class LUSDataset(Dataset):
     return processed_np
 
   def __len__(self):
-    return len(os.listdir(self.img_dir))
+    return len(os.listdir(self.msk_dir))
 
   def __getitem__(self, idx):
-    img_names = os.listdir(self.img_dir)
-    msk_names = os.listdir(self.msk_dir)
     # print(self.img_dir+img_names[idx])
     # print(self.msk_dir+msk_names[idx])
-    msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
-    img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
-    #img = cv2.imread(self.img_dir+img_names[idx])
-    #msk = cv2.imread(self.img_dir+msk_names[idx])
-    #print("cv2 size------------")
-    #print(f"size of img: {img[0].shape}")
-    #print(f"size of mask: {msk[0].shape}")
-
-    # assert (np.all(img.shape == msk.shape))
-    # assert (np.all(img.size == msk.size))
+    msk = cv2.imread(self.msk_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread(self.img_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
     img = self.preprocess(img)
-    msk = self.preprocess(msk, isMsk=True)
-    print(f'msk max val: {np.max(msk)}')
+    if self.encoder:
+      msk = self.preprocess(msk)
+    else:
+      msk = self.preprocess(msk, isMsk=True)
+    #print(f'msk max val: {np.max(msk)}')
 
     return {
         'image': torch.as_tensor(img.copy()).float().contiguous(),
