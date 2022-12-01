@@ -72,11 +72,11 @@ class LUSDataset(Dataset):
     if use_patient_data:
       if encoder:
         print('load patient data')
-        self.img_dir = '../dataset_patient_nolabel/image/'
-        self.msk_dir = '../dataset_patient_nolabel/mask/'
+        self.img_dir = './dataset_patient_nolabel/image/'
+        self.msk_dir = './dataset_patient_nolabel/mask/'
       else:
-        self.img_dir = '../input/LUS_patient_baseline/dataset/image/'
-        self.msk_dir = '../input/LUS_patient_baseline/dataset/mask/'
+        self.img_dir = './dataset_patient/image/'
+        self.msk_dir = './dataset_patient/mask/'
     self.sample_list=os.listdir(self.msk_dir)
 
     self.INPUT_HEIGHT = 224
