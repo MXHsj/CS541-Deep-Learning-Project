@@ -30,23 +30,24 @@ def train_net(net,
               learning_rate: float = 1e-5,
               val_percent: float = 0.1,
               save_checkpoint: bool = True,
-              #img_scale: float = 0.5,
-              amp: bool = False):
-  # 1. Create dataset
-  dataset = LUSDataset()
+              # img_scale: float = 0.5,
+              amp: bool = False,
+              encoder: bool = True):
+    # 1. Create dataset
+    dataset = LUSDataset(encoder=encoder)
 
-  # 2. Split into train / validation partitions
-  n_val = int(len(dataset) * val_percent)
-  n_train = len(dataset) - n_val
-  train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
+    # 2. Split into train / validation partitions
+    n_val = int(len(dataset) * val_percent)
+    n_train = len(dataset) - n_val
+    train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
 
-  # 3. Create data loaders
-  loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
-  train_loader = DataLoader(train_set, shuffle=True, **loader_args)
-  val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
+    # 3. Create data loaders
+    loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_set, shuffle=True, **loader_args)
+    val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
-  # (Initialize logging)
-  print(f'''Starting training:
+    # (Initialize logging)
+    print(f'''Starting training:
         Epochs:          {epochs}
         Batch size:      {batch_size}
         Learning rate:   {learning_rate}
@@ -57,137 +58,178 @@ def train_net(net,
         Mixed Precision: {amp}
     ''')
 
-  # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
-  optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
-  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
-  grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-  criterion = nn.CrossEntropyLoss()
-  global_step = 0
+    # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
+    optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
+    grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
+    criterion = nn.CrossEntropyLoss()
+    global_step = 0
 
-  # 5. Begin training
-  for epoch in range(1, epochs+1):
-    net.train()
-    epoch_loss = 0
-    with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
-      for batch in train_loader:
-        images = batch['image']
-        masks_true = batch['mask']
-        print(f"image shape: {images.shape}")
+    # 5. Begin training
+    for epoch in range(1, epochs + 1):
+        net.train()
+        epoch_loss = 0
+        with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
+            for batch in train_loader:
+                images = batch['image']
+                masks_true = batch['mask']
+                # print(f"image shape: {images.shape}")
 
-        assert images.shape[1] == net.n_channels, \
-            f'Network has been defined with {net.n_channels} input channels, ' \
-            f'but loaded images have {images.shape[1]} channels. Please check that ' \
-            'the images are loaded correctly.'
+                assert images.shape[1] == net.n_channels, \
+                    f'Network has been defined with {net.n_channels} input channels, ' \
+                    f'but loaded images have {images.shape[1]} channels. Please check that ' \
+                    'the images are loaded correctly.'
 
-        images = images.to(device=device, dtype=torch.float32)
-        masks_true = masks_true.to(device=device, dtype=torch.long)
+                images = images.to(device=device, dtype=torch.float32)
+                masks_true = masks_true.to(device=device, dtype=torch.long)
 
-        with torch.cuda.amp.autocast(enabled=amp):
-          masks_pred = net(images)
-          print("loss part -----------------------")
-          print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
-          print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
-          loss_CE = criterion(masks_pred, masks_true)
-          loss_dice = dice_loss(masks_pred.float(),
-                                F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
-                                multiclass=True)
-          loss = loss_CE + loss_dice
-          print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
+                with torch.cuda.amp.autocast(enabled=amp):
+                    masks_pred = net(images)
+                    # print("loss part -----------------------")
+                    # print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
+                    # print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
+                    if not encoder:
+                        loss_CE = criterion(masks_pred, masks_true)
+                        loss_dice = dice_loss(masks_pred.float(),
+                                              F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
+                                              multiclass=True)
+                        loss = loss_CE + loss_dice
+                        #print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
+                    else:
+                        loss_fn = nn.MSELoss()
+                        loss = loss_fn(masks_pred.float(), masks_true.float())
 
-        optimizer.zero_grad(set_to_none=True)
-        grad_scaler.scale(loss).backward()
-        grad_scaler.step(optimizer)
-        grad_scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                grad_scaler.scale(loss).backward()
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
 
-        pbar.update(images.shape[0])
-        global_step += 1
-        epoch_loss += loss.item()
+                pbar.update(images.shape[0])
+                global_step += 1
+                epoch_loss += loss.item()
 
-        print(f"step: {global_step}")
-        print(f"epoch: {epoch}")
-        pbar.set_postfix(**{'loss (batch)': loss.item()})
+                # print(f"step: {global_step}")
+                # print(f"epoch: {epoch}")
+                pbar.set_postfix(**{'loss (batch)': loss.item(),'loss_ce (batch)': loss_CE.item(),'loss_dice (batch)': loss_dice.item()})
+                # Evaluation round
+                division_step = (n_train // (10 * batch_size))
+                if division_step > 0:
+                    if global_step % division_step == 0:
+                        if not encoder:
+                            val_score = evaluate_dice(net, val_loader, device)
+                            scheduler.step(val_score)
+                            print(f"Validation Dice score: {val_score}")
+                            print(f'''Validation info:
+                    Learning rate: {optimizer.param_groups[0]['lr']}
+                    Validation Dice: {val_score}
+                    Step: {global_step}
+                    Epoch: {epoch}
+              ''')
+                        else:
+                            pass
+                        if encoder:
+                            image = tensor2PIL(images[0].float(), device=device)
+                            mask_true = tensor2PIL(255 * masks_true[0].float(), device=device)
+                            mask_pred = tensor2PIL(255 * masks_pred.argmax(dim=1)[0].float(), device=device)
+                            tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
+                            plot_segmentation(tag, image, mask_true, mask_pred)
+                        else:
+                            image = tensor2PIL(images[0].float(), device=device)
+                            mask_true = tensor2PIL(masks_true[0].float(), device=device)
+                            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float(), device=device)
+                            tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
+                            plot_segmentation(tag, image, mask_true, mask_pred)
+                        # # ====== save figures ======
 
-        # Evaluation round
-        division_step = (n_train // (10 * batch_size))
-        if division_step > 0:
-          if global_step % division_step == 0:
-            val_score = evaluate_dice(net, val_loader, device)
-            scheduler.step(val_score)
-            print(f"Validation Dice score: {val_score}")
-            print(f'''Validation info:
-                  Learning rate: {optimizer.param_groups[0]['lr']}
-                  Validation Dice: {val_score}
-                  Step: {global_step}
-                  Epoch: {epoch}
-            ''')
-            # # ====== save figures ======
-            image = tensor2PIL(images[0].float(), device=device)
-            mask_true = tensor2PIL(masks_true[0].float(), device=device)
-            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float(), device=device)
-            tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
-            plot_segmentation(tag, image, mask_true, mask_pred)
-            # # ==========================
+                        # # ==========================
 
-    if save_checkpoint:
-      Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
-      torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
-      print(f"Checkpoint {epoch} saved!")
+        if save_checkpoint:
+            Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
+            torch.save(net.state_dict(), './checkpoints/' + str(encoder) + f'checkpoint_epoch{epoch}.pth')
+            print(f"Checkpoint {epoch} saved!")
 
 
 def get_args():
-  parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
-  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
-  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
-                      help='Learning rate', dest='lr')
-  parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
-  parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
-  parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
-                      help='Percent of the data that is used as validation (0-100)')
-  parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
-  parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
-  parser.add_argument('--classes', '-c', type=int, default=3, help='Number of classes')
+    parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
+    parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
+    parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
+    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
+                        help='Learning rate', dest='lr')
+    parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
+    parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
+    parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
+                        help='Percent of the data that is used as validation (0-100)')
+    parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
+    parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
+    parser.add_argument('--classes', '-c', type=int, default=3, help='Number of classes')
 
-  return parser.parse_args()
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
-  args = get_args()
-  device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-  print(f"Using device {device}")
+    args = get_args()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device {device}")
 
-  # Change here to adapt to your data
-  # n_channels=3 for RGB images
-  # n_channels=1 for grey images
-  # n_classes is the number of probabilities you want to get per pixel
-  net = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
+    # Change here to adapt to your data
+    # n_channels=3 for RGB images
+    # n_channels=1 for grey images
+    # n_classes is the number of probabilities you want to get per pixel
+    net_encoder = UNet(n_channels=1, n_classes=1, encoder=True, bilinear=args.bilinear)
 
-  print(f'''Network:\n
-        \t{net.n_channels} input channels\n
-        \t{net.n_classes} output channels (classes)\n
-        \t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling
+    print(f'''Network:\n
+        \t{net_encoder.n_channels} input channels\n
+        \t{net_encoder.n_classes} output channels (classes)\n
+        \t{"Bilinear" if net_encoder.bilinear else "Transposed conv"} upscaling
   ''')
 
-  if args.load:
-    net.load_state_dict(torch.load(args.load, map_location=device))
-    print(f"Model loaded from {args.load}")
-    #logging.info(f'Model loaded from {args.load}')
+    if args.load:
+        net_encoder.load_state_dict(torch.load(args.load, map_location=device))
+        print(f"Model loaded from {args.load}")
+        # logging.info(f'Model loaded from {args.load}')
 
-  net.to(device=device)
-  try:
-    train_net(net=net,
-              epochs=args.epochs,
-              batch_size=args.batch_size,
-              learning_rate=args.lr,
-              device=device,
-              # img_scale=args.scale,
-              val_percent=args.val / 100,
-              amp=args.amp)
-  except KeyboardInterrupt:
-    torch.save(net.state_dict(), str(dir_checkpoint/'INTERRUPTED.pth'))
-    print(f"Saved interrupt")
-    #logging.info('Saved interrupt')
-    raise
+    net_encoder.to(device=device)
+    print('------------------------------train encoder---------------------------------')
+    unload = False
+    if unload:
+        try:
+            train_net(net=net_encoder,
+                      epochs=args.epochs,
+                      batch_size=args.batch_size,
+                      learning_rate=args.lr,
+                      device=device,
+                      # img_scale=args.scale,
+                      val_percent=args.val / 100,
+                      amp=args.amp,
+                      encoder=True)
+        except KeyboardInterrupt:
+            torch.save(net_encoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
+            print(f"Saved interrupt")
+            # logging.info('Saved interrupt')
+            raise
+    else:
+      net_encoder=torch.load('./checkpoints/Truecheckpoint_epoch6.pth')
+    print('------------------------------train decoder---------------------------------')
+    net_decoder = UNet(n_channels=1, n_classes=4, encoder=False, bilinear=args.bilinear)
 
-  finally:
-    pass
+    for i, (name, parameters) in enumerate(net_decoder.named_parameters()):
+        if i < 30:
+            parameters.requires_grad = False
+            parameters.data = net_encoder.parameters( )[name]
+    try:
+        train_net(net=net_decoder,
+                  epochs=args.epochs,
+                  batch_size=args.batch_size,
+                  learning_rate=args.lr,
+                  device=device,
+                  # img_scale=args.scale,
+                  val_percent=args.val / 100,
+                  amp=args.amp,
+                  encoder=False)
+    except KeyboardInterrupt:
+        torch.save(net_decoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
+        print(f"Saved interrupt")
+        # logging.info('Saved interrupt')
+        raise
+    finally:
+        pass
