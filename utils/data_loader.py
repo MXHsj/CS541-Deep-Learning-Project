@@ -11,9 +11,18 @@ import random
 import torch
 import numpy as np
 from scipy import ndimage
-from torch.utils.data import Dataset
 from PIL import Image
 from scipy.ndimage.interpolation import zoom
+
+from torch.utils.data import Dataset
+from torchvision import transforms
+
+from vis import tensor2array
+
+INPUT_HEIGHT = 128
+INPUT_WIDTH = 128
+ORIG_HEIGHT = 820
+ORIG_WIDTH = 1124
 
 
 def random_rot_flip(image, label):
@@ -38,54 +47,45 @@ def random_deform(image, label):
   return image, label
 
 
-class RandomGenerator(object):
-  def __init__(self, output_size):
-    self.output_size = output_size
+class RandomGenerator():
+  def __init__(self):
+    pass
 
   def __call__(self, sample):
-    image, label = sample['image'], sample['label']
-
+    image, label = sample['image'], sample['mask']
+    image = tensor2array(image)
+    label = tensor2array(label)
+    output_size = image.shape
+    # force either random flipping or random rotation
     if random.random() > 0.5:
       image, label = random_rot_flip(image, label)
-    elif random.random() > 0.5:
+    else:
       image, label = random_rotate(image, label)
     x, y = image.shape
-    if x != self.output_size[0] or y != self.output_size[1]:
-      image = zoom(image, (self.output_size[0] / x, self.output_size[1] / y), order=3)  # why not 3?
-      #label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
-      label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=0)
-    image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
-    label = torch.from_numpy(label.astype(np.float32))
-    sample = {'image': image, 'label': label.long()}
-    return sample
+    if x != output_size[0] or y != output_size[1]:
+      image = zoom(image, (output_size[0] / x, output_size[1] / y), order=3)
+      label = zoom(label, (output_size[0] / x, output_size[1] / y), order=3)
+    return {'image': image, 'mask': label}
 
 
 class LUSDataset(Dataset):
-  def __init__(self, use_patient_data=True):
+  def __init__(self, sizefit2model=True, use_augmented_data=False):
     """ 
-    :use_patient_data:
+    :param fit2model:             shrink image to fit model input size
+    :param use_patient_data:
+    TODO:
+    - use larger input image size
     """
-    if use_patient_data:
+    self.sizefit2model = sizefit2model
+    if use_augmented_data:
+      print('load augmented patient data')
+      self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image_aug/')
+      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged_aug/')
+    else:
       print('load patient data')
       self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
       self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged/')
     assert (len(os.listdir(self.img_dir)) == len(os.listdir(self.msk_dir)))
-
-    self.INPUT_HEIGHT = 128
-    self.INPUT_WIDTH = 128
-
-  def preprocess(self, frame, isMsk=False):
-    processed = cv2.resize(frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT))
-    if isMsk:
-      processed[processed > 2] = 0  # force two classes
-    processed_np = processed.copy()
-    if not isMsk:
-      if processed_np.ndim == 2:
-        processed_np = processed_np[np.newaxis, ...]
-      else:
-        processed_np = processed_np.transpose((2, 0, 1))
-      processed_np = processed_np / 255  # normalize
-    return processed_np
 
   def __len__(self):
     return len(os.listdir(self.img_dir))
@@ -97,22 +97,59 @@ class LUSDataset(Dataset):
     # print(self.msk_dir+msk_names[idx])
     msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
-    #img = cv2.imread(self.img_dir+img_names[idx])
-    #msk = cv2.imread(self.img_dir+msk_names[idx])
-    #print("cv2 size------------")
-    #print(f"size of img: {img[0].shape}")
-    #print(f"size of mask: {msk[0].shape}")
+    # print(f"dim of img: {img.shape}")
+    # print(f"dim of mask: {msk.shape}")
 
     # assert (np.all(img.shape == msk.shape))
     # assert (np.all(img.size == msk.size))
-    img = self.preprocess(img)
-    msk = self.preprocess(msk, isMsk=True)
-    print(f'msk max val: {np.max(msk)}')
+    img = self.preprocess(img)              # single channel, grey scale
+    msk = self.preprocess(msk, isMsk=True)  # single channel, multiple labels
+    # print(f'msk max val: {np.max(msk)}')
 
     return {
         'image': torch.as_tensor(img.copy()).float().contiguous(),
         'mask': torch.as_tensor(msk.copy()).long().contiguous()
     }
 
+  def preprocess(self, frame: np.ndarray, isMsk=False):
+    ''' preprocess input image and mask
+    '''
+    if self.sizefit2model:
+      processed = cv2.resize(frame, (INPUT_WIDTH, INPUT_HEIGHT))
+    else:
+      processed = frame.copy()
+
+    if isMsk:
+      processed[processed > 2] = 0  # force two classes
+    processed_np = processed.copy()
+    if not isMsk:
+      if processed_np.ndim == 2:
+        processed_np = processed_np[np.newaxis, ...]
+      else:
+        processed_np = processed_np.transpose((2, 0, 1))
+      processed_np = processed_np / 255  # normalize
+    return processed_np
+
   def view_item(self, idx):
     ...
+
+
+if __name__ == '__main__':
+  # ========== training data augmentation (only needs to run once per dataset) ==========
+  img_aug_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image_aug/')
+  msk_aug_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged_aug/')
+  dataset = LUSDataset(sizefit2model=False, use_augmented_data=False)
+  random_generator = RandomGenerator()
+  print(f'size of training set: {len(dataset)}')
+  aug_itr = 1
+  for idx, item in enumerate(dataset):
+    # ===== wirte original image and mask =====
+    cv2.imwrite(img_aug_dir+f'frame{idx}.jpg', 255*tensor2array(item['image']))
+    cv2.imwrite(msk_aug_dir+f'frame{idx}.jpg', tensor2array(item['mask']))
+    # ===== write augmented image and mask ======
+    for i in range(aug_itr):
+      augmented1 = random_generator(item)  # first augmentation
+      cv2.imwrite(img_aug_dir+f'frame{idx}_aug{i}.jpg', 255*augmented1['image'])
+      cv2.imwrite(msk_aug_dir+f'frame{idx}_aug{i}.jpg', augmented1['mask'])
+      print(f'data augmentation: {idx+1}/{len(dataset)}')
+  print('finished')

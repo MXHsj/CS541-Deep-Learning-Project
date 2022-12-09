@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
 from unet.model import UNet
-from utils.data_loader import LUSDataset
+from utils.data_loader import LUSDataset, RandomGenerator
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
 from utils.vis import tensor2PIL, plot_segmentation
@@ -32,15 +32,14 @@ def train_net(net,
               save_checkpoint: bool = True,
               #img_scale: float = 0.5,
               amp: bool = False):
-  # 1. Create dataset
-  dataset = LUSDataset()
-
-  # 2. Split into train / validation partitions
+  # ========== Create dataset & split into train / validation partitions ==========
+  dataset = LUSDataset(sizefit2model=True, use_augmented_data=True)
   n_val = int(len(dataset) * val_percent)
   n_train = len(dataset) - n_val
+  print(f'size of training set: {n_train}, size of validation set: {n_val}')
   train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
 
-  # 3. Create data loaders
+  # ========== Create data loaders ==========
   loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
   train_loader = DataLoader(train_set, shuffle=True, **loader_args)
   val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
@@ -57,14 +56,14 @@ def train_net(net,
         Mixed Precision: {amp}
     ''')
 
-  # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
+  # ========== Set up the optimizer, loss, learning rate scheduler and loss scaling for AMP ==========
   optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
   scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
   grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
   criterion = nn.CrossEntropyLoss()
   global_step = 0
 
-  # 5. Begin training
+  # ========== Begin training ==========
   for epoch in range(1, epochs+1):
     net.train()
     epoch_loss = 0
