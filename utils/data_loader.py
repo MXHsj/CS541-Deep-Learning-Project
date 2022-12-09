@@ -16,8 +16,8 @@ from scipy.ndimage.interpolation import zoom
 
 from torch.utils.data import Dataset
 
-INPUT_HEIGHT = 256  # 128
-INPUT_WIDTH = 256  # 128
+INPUT_HEIGHT = 128
+INPUT_WIDTH = 128
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
 
@@ -117,8 +117,9 @@ class LUSDataset(Dataset):
     if patient_data:
       print('load patient data')
       self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
-      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged/')
-    assert (len(os.listdir(self.img_dir)) == len(os.listdir(self.msk_dir)))
+      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/pleural_line/')
+      # self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/rib_shadow/')
+    # assert (len(os.listdir(self.img_dir)) == len(os.listdir(self.msk_dir)))
 
   def __len__(self):
     return len(os.listdir(self.img_dir))
@@ -128,8 +129,12 @@ class LUSDataset(Dataset):
     msk_names = os.listdir(self.msk_dir)
     # print(self.img_dir+img_names[idx])
     # print(self.msk_dir+msk_names[idx])
-    msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
+    try:
+      msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
+    except Exception as e:
+      print(f'loading mask: {e}\n')
+      msk = np.zeros_like(img)
     # print(f"dim of img: {img.shape}")
     # print(f"dim of mask: {msk.shape}")
     if self.transform is not None:
@@ -139,6 +144,7 @@ class LUSDataset(Dataset):
     # assert (np.all(img.size == msk.size))
     img = self.preprocess(img)              # single channel, grey scale
     msk = self.preprocess(msk, isMsk=True)  # single channel, multiple labels
+
     # print(f'msk max val: {np.max(msk)}')
 
     return {'image': torch.as_tensor(img.copy()).float().contiguous(),
@@ -153,15 +159,16 @@ class LUSDataset(Dataset):
       processed = frame.copy()
 
     if isMsk:
-      processed[processed > 2] = 0  # force two classes
-    processed_np = processed.copy()
+      processed = processed / 255
+      processed[processed > 0.3] = 1  # limit class label range
+
     if not isMsk:
-      if processed_np.ndim == 2:
-        processed_np = processed_np[np.newaxis, ...]
+      if processed.ndim == 2:
+        processed = processed[np.newaxis, ...]
       else:
-        processed_np = processed_np.transpose((2, 0, 1))
-      processed_np = processed_np / 255  # normalize
-    return processed_np
+        processed = processed.transpose((2, 0, 1))
+      processed = processed / 255  # normalize
+    return processed
 
   def view_item(self, idx):
     ...
