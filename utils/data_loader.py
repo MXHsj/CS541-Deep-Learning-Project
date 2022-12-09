@@ -10,40 +10,79 @@ import cv2
 import random
 import torch
 import numpy as np
+import elasticdeform
 from scipy import ndimage
-from PIL import Image
 from scipy.ndimage.interpolation import zoom
 
 from torch.utils.data import Dataset
-from torchvision import transforms
 
-from vis import tensor2array
-
-INPUT_HEIGHT = 128
-INPUT_WIDTH = 128
+INPUT_HEIGHT = 256  # 128
+INPUT_WIDTH = 256  # 128
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
 
 
-def random_rot_flip(image, label):
-  k = np.random.randint(0, 4)
-  image = np.rot90(image, k)
-  label = np.rot90(label, k)
-  axis = np.random.randint(0, 2)
-  image = np.flip(image, axis=axis).copy()
-  label = np.flip(label, axis=axis).copy()
+def _normalize_inputs(X):
+  if isinstance(X, np.ndarray):
+    Xs = [X]
+  elif isinstance(X, list):
+    Xs = X
+  else:
+    raise Exception('X should be a numpy.ndarray or a list of numpy.ndarrays.')
+
+  # check X inputs
+  assert len(Xs) > 0, 'You must provide at least one image.'
+  assert all(isinstance(x, np.ndarray) for x in Xs), 'All elements of X should be numpy.ndarrays.'
+  return Xs
+
+
+def _normalize_axis_list(axis, Xs):
+  if axis is None:
+    axis = [tuple(range(x.ndim)) for x in Xs]
+  elif isinstance(axis, int):
+    axis = (axis,)
+  if isinstance(axis, tuple):
+    axis = [axis] * len(Xs)
+  assert len(axis) == len(Xs), 'Number of axis tuples should match number of inputs.'
+  input_shapes = []
+  for x, ax in zip(Xs, axis):
+    assert isinstance(ax, tuple), 'axis should be given as a tuple'
+    assert all(isinstance(a, int) for a in ax), 'axis must contain ints'
+    assert len(ax) == len(axis[0]), 'All axis tuples should have the same length.'
+    assert ax == tuple(set(ax)), 'axis must be sorted and unique'
+    assert all(0 <= a < x.ndim for a in ax), 'invalid axis for input'
+    input_shapes.append(tuple(x.shape[d] for d in ax))
+  assert len(set(input_shapes)) == 1, 'All inputs should have the same shape.'
+  deform_shape = input_shapes[0]
+  return axis, deform_shape
+
+
+def random_rot_flip(image: np.ndarray, label: np.ndarray):
+  image = np.flip(image, axis=1).copy()  # horizontal flip
+  label = np.flip(label, axis=1).copy()
   return image, label
 
 
-def random_rotate(image, label):
+def random_rotate(image: np.ndarray, label: np.ndarray):
   angle = np.random.randint(-10, 10)
   image = ndimage.rotate(image, angle, order=0, reshape=False)
   label = ndimage.rotate(label, angle, order=0, reshape=False)
   return image, label
 
 
-def random_deform(image, label):
-  # TODO: elastic deformation
+def random_deform(image: np.ndarray, label: np.ndarray):
+  ''' perform random elastic deformation using 3x3 grid
+  '''
+  # image = elasticdeform.deform_random_grid(image, sigma=60, rotate=-5.05, points=3)
+  Xs = _normalize_inputs(image)
+  axis, deform_shape = _normalize_axis_list(None, Xs)
+  sigma = 5
+  points = 3
+  if not isinstance(points, (list, tuple)):
+    points = [points] * len(deform_shape)
+  displacement = np.random.randn(len(deform_shape), *points) * sigma
+  image = elasticdeform.deform_grid(image, displacement, axis=axis, rotate=-3.0)
+  label = elasticdeform.deform_grid(label, displacement, axis=axis, rotate=-3.0)
   return image, label
 
 
@@ -51,37 +90,31 @@ class RandomGenerator():
   def __init__(self):
     pass
 
-  def __call__(self, sample):
-    image, label = sample['image'], sample['mask']
-    image = tensor2array(image)
-    label = tensor2array(label)
+  def __call__(self, image, label):
     output_size = image.shape
-    # force either random flipping or random rotation
     if random.random() > 0.5:
       image, label = random_rot_flip(image, label)
-    else:
+    elif random.random() > 0.5:
       image, label = random_rotate(image, label)
+    # if random.random() > 0.2:
+    #   image, label = random_deform(image, label)
+    # print('augmentation applied')
     x, y = image.shape
     if x != output_size[0] or y != output_size[1]:
       image = zoom(image, (output_size[0] / x, output_size[1] / y), order=3)
       label = zoom(label, (output_size[0] / x, output_size[1] / y), order=3)
-    return {'image': image, 'mask': label}
+    return image, label
 
 
 class LUSDataset(Dataset):
-  def __init__(self, sizefit2model=True, use_augmented_data=False):
+  def __init__(self, sizefit2model=True, patient_data=False, transform=None):
     """ 
     :param fit2model:             shrink image to fit model input size
     :param use_patient_data:
-    TODO:
-    - use larger input image size
     """
+    self.transform = transform
     self.sizefit2model = sizefit2model
-    if use_augmented_data:
-      print('load augmented patient data')
-      self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image_aug/')
-      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged_aug/')
-    else:
+    if patient_data:
       print('load patient data')
       self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
       self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged/')
@@ -99,6 +132,8 @@ class LUSDataset(Dataset):
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
     # print(f"dim of img: {img.shape}")
     # print(f"dim of mask: {msk.shape}")
+    if self.transform is not None:
+      img, msk = self.transform(img, msk)
 
     # assert (np.all(img.shape == msk.shape))
     # assert (np.all(img.size == msk.size))
@@ -106,10 +141,8 @@ class LUSDataset(Dataset):
     msk = self.preprocess(msk, isMsk=True)  # single channel, multiple labels
     # print(f'msk max val: {np.max(msk)}')
 
-    return {
-        'image': torch.as_tensor(img.copy()).float().contiguous(),
-        'mask': torch.as_tensor(msk.copy()).long().contiguous()
-    }
+    return {'image': torch.as_tensor(img.copy()).float().contiguous(),
+            'mask': torch.as_tensor(msk.copy()).long().contiguous()}
 
   def preprocess(self, frame: np.ndarray, isMsk=False):
     ''' preprocess input image and mask
@@ -132,24 +165,3 @@ class LUSDataset(Dataset):
 
   def view_item(self, idx):
     ...
-
-
-if __name__ == '__main__':
-  # ========== training data augmentation (only needs to run once per dataset) ==========
-  img_aug_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image_aug/')
-  msk_aug_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask_merged_aug/')
-  dataset = LUSDataset(sizefit2model=False, use_augmented_data=False)
-  random_generator = RandomGenerator()
-  print(f'size of training set: {len(dataset)}')
-  aug_itr = 1
-  for idx, item in enumerate(dataset):
-    # ===== wirte original image and mask =====
-    cv2.imwrite(img_aug_dir+f'frame{idx}.jpg', 255*tensor2array(item['image']))
-    cv2.imwrite(msk_aug_dir+f'frame{idx}.jpg', tensor2array(item['mask']))
-    # ===== write augmented image and mask ======
-    for i in range(aug_itr):
-      augmented1 = random_generator(item)  # first augmentation
-      cv2.imwrite(img_aug_dir+f'frame{idx}_aug{i}.jpg', 255*augmented1['image'])
-      cv2.imwrite(msk_aug_dir+f'frame{idx}_aug{i}.jpg', augmented1['mask'])
-      print(f'data augmentation: {idx+1}/{len(dataset)}')
-  print('finished')

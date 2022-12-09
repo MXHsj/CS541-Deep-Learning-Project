@@ -18,7 +18,7 @@ from unet.model import UNet
 from utils.data_loader import LUSDataset, RandomGenerator
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
-from utils.vis import tensor2PIL, plot_segmentation
+from utils.vis import tensor2PIL, array2tensor, plot_segmentation
 
 dir_checkpoint = Path('./checkpoints/')
 
@@ -33,10 +33,11 @@ def train_net(net,
               #img_scale: float = 0.5,
               amp: bool = False):
   # ========== Create dataset & split into train / validation partitions ==========
-  dataset = LUSDataset(sizefit2model=True, use_augmented_data=True)
+  random_generator = RandomGenerator()  # for data augmentation
+  # dataset = LUSDataset(sizefit2model=True, patient_data=True, transform=random_generator)
+  dataset = LUSDataset(sizefit2model=True, patient_data=True, transform=None)
   n_val = int(len(dataset) * val_percent)
   n_train = len(dataset) - n_val
-  print(f'size of training set: {n_train}, size of validation set: {n_val}')
   train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
 
   # ========== Create data loaders ==========
@@ -44,7 +45,6 @@ def train_net(net,
   train_loader = DataLoader(train_set, shuffle=True, **loader_args)
   val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
-  # (Initialize logging)
   print(f'''Starting training:
         Epochs:          {epochs}
         Batch size:      {batch_size}
@@ -53,12 +53,12 @@ def train_net(net,
         Validation size: {n_val}
         Checkpoints:     {save_checkpoint}
         Device:          {device.type}
-        Mixed Precision: {amp}
-    ''')
+        Mixed Precision: {amp}''')
 
   # ========== Set up the optimizer, loss, learning rate scheduler and loss scaling for AMP ==========
-  optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
-  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
+  L2_reg = 1e-6  # 1e-8
+  optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=L2_reg, momentum=0.9)
+  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=4)  # goal: maximize Dice score
   grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
   criterion = nn.CrossEntropyLoss()
   global_step = 0
@@ -69,8 +69,10 @@ def train_net(net,
     epoch_loss = 0
     with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
       for batch in train_loader:
+        # batch = random_generator(batch) # data augmentation
         images = batch['image']
         masks_true = batch['mask']
+
         print(f"image shape: {images.shape}")
 
         assert images.shape[1] == net.n_channels, \
@@ -83,15 +85,14 @@ def train_net(net,
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
-          print("loss part -----------------------")
-          print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
-          print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
+          # print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
+          # print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
           loss_CE = criterion(masks_pred, masks_true)
           loss_dice = dice_loss(masks_pred.float(),
                                 F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
                                 multiclass=True)
           loss = loss_CE + loss_dice
-          print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
+          # print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
 
         optimizer.zero_grad(set_to_none=True)
         grad_scaler.scale(loss).backward()
@@ -135,13 +136,13 @@ def train_net(net,
 
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
-  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
-  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
+  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
+  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=1, help='Batch size')
+  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=4e-5,
                       help='Learning rate', dest='lr')
   parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
   parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
-  parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
+  parser.add_argument('--validation', '-v', dest='val', type=float, default=30.0,
                       help='Percent of the data that is used as validation (0-100)')
   parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
   parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
