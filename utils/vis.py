@@ -62,7 +62,7 @@ def tensor2PIL(tensor: torch.tensor, device=torch.device('cuda')) -> Image:
   return image
 
 
-def plot_segmentation(out_file_tag: str, image: Image, mask: Image, pred_mask: Image) -> None:
+def plot_segmentation(out_file_tag: str, image, mask, pred_mask) -> None:
   save_path = './training_log/'
   # create figure
   fig = plt.figure(figsize=(10, 7))
@@ -96,3 +96,4 @@ def plot_segmentation(out_file_tag: str, image: Image, mask: Image, pred_mask: I
   plt.title("Pred_mask")
 
   plt.savefig(save_path + out_file_tag + '.png')
+  plt.close(fig)

@@ -18,6 +18,8 @@ from torch.utils.data import Dataset
 
 INPUT_HEIGHT = 256  # 128
 INPUT_WIDTH = 256  # 128
+# INPUT_HEIGHT = 128
+# INPUT_WIDTH = 128
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
 
