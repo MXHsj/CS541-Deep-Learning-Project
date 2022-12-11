@@ -2,6 +2,7 @@
 *.pyc
 *-checkpoint.ipynb
 .ipynb_checkpoints/*
+*.npz
 
 # ROS
 *.bag
@@ -20,3 +21,4 @@ tensorboard/
 
 # multi-media
 *.png
+*.txt

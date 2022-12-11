@@ -24,15 +24,15 @@ dir_checkpoint = Path('./checkpoints/')
 
 
 def train_net(net,
-              device,
-              epochs: int = 5,
-              batch_size: int = 1,
-              learning_rate: float = 1e-5,
-              val_percent: float = 0.1,
-              save_checkpoint: bool = True,
-              # img_scale: float = 0.5,
-              amp: bool = False,
-              encoder: bool = True):
+            device,
+            epochs: int = 5,
+            batch_size: int = 1,
+            learning_rate: float = 1e-5,
+            val_percent: float = 0.1,
+            save_checkpoint: bool = True,
+            # img_scale: float = 0.5,
+            amp: bool = False,
+            encoder: bool = True):
     # 1. Create dataset
     dataset = LUSDataset(encoder=encoder)
 
@@ -55,8 +55,7 @@ def train_net(net,
         Validation size: {n_val}
         Checkpoints:     {save_checkpoint}
         Device:          {device.type}
-        Mixed Precision: {amp}
-    ''')
+        Mixed Precision: {amp}''')
 
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
     optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
@@ -91,8 +90,8 @@ def train_net(net,
                     if not encoder:
                         loss_CE = criterion(masks_pred, masks_true)
                         loss_dice = dice_loss(masks_pred.float(),
-                                              F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
-                                              multiclass=True)
+                                            F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
+                                            multiclass=True)
                         loss = loss_CE + loss_dice
                         #print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
                     else:
@@ -110,7 +109,8 @@ def train_net(net,
 
                 # print(f"step: {global_step}")
                 # print(f"epoch: {epoch}")
-                pbar.set_postfix(**{'loss (batch)': loss.item(),'loss_ce (batch)': loss_CE.item(),'loss_dice (batch)': loss_dice.item()})
+                # pbar.set_postfix(**{'loss (batch)': loss.item(),'loss_ce (batch)': loss_CE.item(),'loss_dice (batch)': loss_dice.item()})
+                pbar.set_postfix(**{'loss (batch)': loss.item()})
                 # Evaluation round
                 division_step = (n_train // (10 * batch_size))
                 if division_step > 0:
@@ -120,11 +120,10 @@ def train_net(net,
                             scheduler.step(val_score)
                             print(f"Validation Dice score: {val_score}")
                             print(f'''Validation info:
-                    Learning rate: {optimizer.param_groups[0]['lr']}
-                    Validation Dice: {val_score}
-                    Step: {global_step}
-                    Epoch: {epoch}
-              ''')
+                                Learning rate: {optimizer.param_groups[0]['lr']}
+                                Validation Dice: {val_score}
+                                Step: {global_step}
+                                Epoch: {epoch}''')
                         else:
                             pass
                         if encoder:
@@ -153,8 +152,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
     parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
     parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
-    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
-                        help='Learning rate', dest='lr')
+    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4, help='Learning rate', dest='lr')
     parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
@@ -180,56 +178,54 @@ if __name__ == '__main__':
     print(f'''Network:\n
         \t{net_encoder.n_channels} input channels\n
         \t{net_encoder.n_classes} output channels (classes)\n
-        \t{"Bilinear" if net_encoder.bilinear else "Transposed conv"} upscaling
-  ''')
+        \t{"Bilinear" if net_encoder.bilinear else "Transposed conv"} upscaling''')
 
     if args.load:
         net_encoder.load_state_dict(torch.load(args.load, map_location=device))
         print(f"Model loaded from {args.load}")
-        # logging.info(f'Model loaded from {args.load}')
 
     net_encoder.to(device=device)
-    print('------------------------------train encoder---------------------------------')
     unload = False
     if unload:
+        print('------------------------------train encoder---------------------------------')
         try:
             train_net(net=net_encoder,
-                      epochs=args.epochs,
-                      batch_size=args.batch_size,
-                      learning_rate=args.lr,
-                      device=device,
-                      # img_scale=args.scale,
-                      val_percent=args.val / 100,
-                      amp=args.amp,
-                      encoder=True)
+                    epochs=args.epochs,
+                    batch_size=args.batch_size,
+                    learning_rate=args.lr,
+                    device=device,
+                    # img_scale=args.scale,
+                    val_percent=args.val / 100,
+                    amp=args.amp,
+                    encoder=True)
         except KeyboardInterrupt:
             torch.save(net_encoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
             print(f"Saved interrupt")
             # logging.info('Saved interrupt')
             raise
     else:
-      net_encoder=torch.load('./checkpoints/Truecheckpoint_epoch6.pth')
-    print('------------------------------train decoder---------------------------------')
-    net_decoder = UNet(n_channels=1, n_classes=4, encoder=False, bilinear=args.bilinear)
+        net_encoder=torch.load('./checkpoints/Truecheckpoint_epoch6.pth')
+        print('------------------------------train decoder---------------------------------')
+        net_decoder = UNet(n_channels=1, n_classes=4, encoder=False, bilinear=args.bilinear)
+        net_decoder.to(device=device)   # force same device
 
-    for i, (name, parameters) in enumerate(net_decoder.named_parameters()):
-        if i < 30:
-            parameters.requires_grad = False
-            parameters.data = net_encoder.parameters( )[name]
-    try:
-        train_net(net=net_decoder,
-                  epochs=args.epochs,
-                  batch_size=args.batch_size,
-                  learning_rate=args.lr,
-                  device=device,
-                  # img_scale=args.scale,
-                  val_percent=args.val / 100,
-                  amp=args.amp,
-                  encoder=False)
-    except KeyboardInterrupt:
-        torch.save(net_decoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
-        print(f"Saved interrupt")
-        # logging.info('Saved interrupt')
-        raise
-    finally:
-        pass
+        for i, (name, parameters) in enumerate(net_decoder.named_parameters()):
+            if i < 30:
+                parameters.requires_grad = False
+                parameters.data = net_encoder[name] # net_encoder.parameters()[name]
+        try:
+            train_net(net=net_decoder,
+                    epochs=args.epochs,
+                    batch_size=args.batch_size,
+                    learning_rate=args.lr,
+                    device=device,
+                    # img_scale=args.scale,
+                    val_percent=args.val / 100,
+                    amp=args.amp,
+                    encoder=False)
+        except KeyboardInterrupt:
+            torch.save(net_decoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
+            print(f"Saved interrupt")
+            raise
+        finally:
+            pass
