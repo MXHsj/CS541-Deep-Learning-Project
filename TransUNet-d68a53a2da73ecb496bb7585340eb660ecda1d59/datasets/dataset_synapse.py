@@ -10,6 +10,7 @@ import cv2
 
 
 def random_rot_flip(image, label):
+    # TODO: 
     k = np.random.randint(0, 4)
     image = np.rot90(image, k)
     label = np.rot90(label, k)
@@ -20,7 +21,7 @@ def random_rot_flip(image, label):
 
 
 def random_rotate(image, label):
-    angle = np.random.randint(-20, 20)
+    angle = np.random.randint(-10, 10)
     image = ndimage.rotate(image, angle, order=0, reshape=False)
     label = ndimage.rotate(label, angle, order=0, reshape=False)
     return image, label
@@ -56,7 +57,7 @@ class Lung_dataset(Dataset):
     def __init__(self, base_dir, split='train', transform=None):
         self.transform = transform  # using transform in torch!
         self.split = split
-        self.sample_list = os.listdir(base_dir + '/mask')
+        self.sample_list = os.listdir(base_dir + '/mask_merged')
         self.data_dir = base_dir
 
     def __len__(self):
@@ -64,12 +65,12 @@ class Lung_dataset(Dataset):
     def __getitem__(self, idx):
         if self.split == "train":
             path_image = self.data_dir + '/image/' + self.sample_list[idx]
-            path_label = self.data_dir + '/mask/' + self.sample_list[idx]
+            path_label = self.data_dir + '/mask_merged/' + self.sample_list[idx]
             image = cv2.imread(path_image, cv2.IMREAD_GRAYSCALE)
             label = cv2.imread(path_label, cv2.IMREAD_GRAYSCALE)
         else:
             path_image = self.data_dir + '/image/' + self.sample_list[idx]
-            path_label = self.data_dir + '/mask/' + self.sample_list[idx]
+            path_label = self.data_dir + '/mask_merged/' + self.sample_list[idx]
             image = cv2.imread(path_image, cv2.IMREAD_GRAYSCALE)
             label = cv2.imread(path_label, cv2.IMREAD_GRAYSCALE)
             image, label = image[:], label[:]

@@ -99,8 +99,7 @@ if __name__ == "__main__":
     snapshot_path = snapshot_path + '_pretrain' if args.is_pretrain else snapshot_path
     snapshot_path += '_' + args.vit_name
     snapshot_path = snapshot_path + '_skip' + str(args.n_skip)
-    snapshot_path = snapshot_path + '_vitpatch' + str(
-        args.vit_patches_size) if args.vit_patches_size != 16 else snapshot_path
+    snapshot_path = snapshot_path + '_vitpatch' + str(args.vit_patches_size) if args.vit_patches_size != 16 else snapshot_path
     snapshot_path = snapshot_path + '_' + str(args.max_iterations)[0:2] + 'k' if args.max_iterations != 30000 else snapshot_path
     snapshot_path = snapshot_path + '_epo' + str(args.max_epochs) if args.max_epochs != 30 else snapshot_path
     snapshot_path = snapshot_path + '_bs' + str(args.batch_size)
