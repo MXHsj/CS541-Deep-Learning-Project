@@ -86,7 +86,7 @@ if __name__ == "__main__":
     dataset_name = args.dataset
     dataset_config = {
         'Lung': {
-            'root_path': '../dataset/train',
+            'root_path': '../dataset_patient',
             'list_dir': './lists/lists_Synapse',
             'num_classes': 4,
         },
