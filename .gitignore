@@ -2,6 +2,7 @@
 *.pyc
 *-checkpoint.ipynb
 *.pth
+*.npz
 
 # ignore recorded ROS topic
 *.bag
@@ -15,3 +16,6 @@
 
 # mac
 .DS_Store
+
+# other
+*.txt

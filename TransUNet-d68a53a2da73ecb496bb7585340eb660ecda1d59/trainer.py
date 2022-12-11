@@ -25,15 +25,15 @@ def trainer_Lung(args, model, snapshot_path):
     num_classes = args.num_classes
     batch_size = args.batch_size * args.n_gpu
     db_train = Lung_dataset(base_dir=args.root_path, split="train",
-                               transform=transforms.Compose(
-                                   [RandomGenerator(output_size=[args.img_size, args.img_size])]))
+                                transform=transforms.Compose(
+                                [RandomGenerator(output_size=[args.img_size, args.img_size])]))
     print("The length of train set is: {}".format(len(db_train)))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True,
-                             worker_init_fn=worker_init_fn)
+                            worker_init_fn=worker_init_fn)
     if args.n_gpu > 1:
         model = nn.DataParallel(model)
     model.train()
@@ -104,15 +104,15 @@ def trainer_encoder(args, model, encoder_path):
     batch_size = args.batch_size * args.n_gpu
     # max_iterations = args.max_iterations
     db_train = Lung_dataset(base_dir=args.encoder_path, split="train",
-                               transform=transforms.Compose(
-                                   [RandomGenerator(output_size=[args.img_size, args.img_size],encoder=True)]))
+                            transform=transforms.Compose(
+                            [RandomGenerator(output_size=[args.img_size, args.img_size],encoder=True)]))
     print("The length of train set is: {}".format(len(db_train)))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True,
-                             worker_init_fn=worker_init_fn)
+                            worker_init_fn=worker_init_fn)
     if args.n_gpu > 1:
         model = nn.DataParallel(model)
     model.train()

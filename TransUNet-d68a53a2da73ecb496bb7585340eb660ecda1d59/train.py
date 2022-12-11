@@ -73,11 +73,11 @@ def showing_seg(img_path, pred_arr):
 
 if __name__ == "__main__":
     if not args.deterministic:
-       cudnn.benchmark = True
-       cudnn.deterministic = False
+        cudnn.benchmark = True
+        cudnn.deterministic = False
     else:
-       cudnn.benchmark = False
-       cudnn.deterministic = True
+        cudnn.benchmark = False
+        cudnn.deterministic = True
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -101,8 +101,7 @@ if __name__ == "__main__":
     snapshot_path = snapshot_path + '_skip' + str(args.n_skip)
     snapshot_path = snapshot_path + '_vitpatch' + str(
         args.vit_patches_size) if args.vit_patches_size != 16 else snapshot_path
-    snapshot_path = snapshot_path + '_' + str(args.max_iterations)[
-                                          0:2] + 'k' if args.max_iterations != 30000 else snapshot_path
+    snapshot_path = snapshot_path + '_' + str(args.max_iterations)[0:2] + 'k' if args.max_iterations != 30000 else snapshot_path
     snapshot_path = snapshot_path + '_epo' + str(args.max_epochs) if args.max_epochs != 30 else snapshot_path
     snapshot_path = snapshot_path + '_bs' + str(args.batch_size)
     snapshot_path = snapshot_path + '_lr' + str(args.base_lr) if args.base_lr != 0.01 else snapshot_path
@@ -117,14 +116,14 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     trainer = {'Lung': trainer_Lung, 'encoder': trainer_encoder}
     if args.encoder == True:
-      encoder_path = "../model/{}/{}".format(args.exp, 'encoder')
-      if False:
-        config_vit.n_classes = 1
-        net = ViT_seg(config_vit, img_size=args.img_size, num_classes=1).to(device=device)
-        
-        if not os.path.exists(encoder_path):
-          os.makedirs(encoder_path)
-        trainer['encoder'](args, net, encoder_path)
+        encoder_path = "../model/{}/{}".format(args.exp, 'encoder')
+        if False:
+            config_vit.n_classes = 1
+            net = ViT_seg(config_vit, img_size=args.img_size, num_classes=1).to(device=device)
+            
+            if not os.path.exists(encoder_path):
+                os.makedirs(encoder_path)
+            trainer['encoder'](args, net, encoder_path)
     config_vit.n_classes = args.num_classes
     net = ViT_seg(config_vit, img_size=args.img_size, num_classes=config_vit.n_classes).to(device=device)
     if args.encoder == True:
