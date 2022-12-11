@@ -1,4 +1,3 @@
-# coding=utf-8
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -31,6 +30,7 @@ FC_0 = "MlpBlock_3/Dense_0"
 FC_1 = "MlpBlock_3/Dense_1"
 ATTENTION_NORM = "LayerNorm_0"
 MLP_NORM = "LayerNorm_2"
+
 
 def np2th(weights, conv=False):
     """Possibly convert HWIO to OIHW."""
@@ -382,6 +382,8 @@ class VisionTransformer(nn.Module):
         self.config = config
 
     def forward(self, x):
+        if len(x.size())==5:
+            x=x[0]
         if x.size()[1] == 1:
             x = x.repeat(1,3,1,1)
         x, attn_weights, features = self.transformer(x)  # (B, n_patch, hidden)
@@ -391,6 +393,7 @@ class VisionTransformer(nn.Module):
 
     def load_from(self, weights):
         with torch.no_grad():
+
             res_weight = weights
             self.transformer.embeddings.patch_embeddings.weight.copy_(np2th(weights["embedding/kernel"], conv=True))
             self.transformer.embeddings.patch_embeddings.bias.copy_(np2th(weights["embedding/bias"]))
@@ -436,7 +439,11 @@ class VisionTransformer(nn.Module):
                 for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
                     for uname, unit in block.named_children():
                         unit.load_from(res_weight, n_block=bname, n_unit=uname)
-
+    def load_encoder(self, weights):
+        for name,parameter in self.named_parameters():
+            if name.split('.')[0]=='transformer':
+                parameter.data = weights[name]
+                parameter.requires_grad = False
 CONFIGS = {
     'ViT-B_16': configs.get_b16_config(),
     'ViT-B_32': configs.get_b32_config(),
@@ -447,5 +454,3 @@ CONFIGS = {
     'R50-ViT-L_16': configs.get_r50_l16_config(),
     'testing': configs.get_testing(),
 }
-
-
