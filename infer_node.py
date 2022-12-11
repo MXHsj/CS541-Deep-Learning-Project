@@ -24,8 +24,8 @@ class LungUltrasoundSegmentServer:
 
   def __init__(self, isVis=True, freq=60) -> None:
     # ========== params ==========
-    self.IMG_WIDTH = 128            # image width for inference
-    self.IMG_HEIGHT = 128           # image height for inference
+    self.IMG_WIDTH = 256            # image width for inference
+    self.IMG_HEIGHT = 256           # image height for inference
     self.IMG_DISP_WIDTH = 640       # image width for display
     self.IMG_DISP_HEIGHT = 480      # image height for display
     self.isVis = isVis              # turn on/off rt visualization
@@ -36,7 +36,7 @@ class LungUltrasoundSegmentServer:
     print(f"Using device {self.device}")
     self.net = UNet(n_channels=1, n_classes=3, bilinear=False)
     self.net.to(device=self.device)
-    self.net.load_state_dict(torch.load('checkpoints/checkpoint_epoch6.pth'))
+    self.net.load_state_dict(torch.load('checkpoints/checkpoint_epoch5.pth'))
     # print(net.eval())
     # =================================
 
