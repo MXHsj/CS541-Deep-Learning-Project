@@ -27,12 +27,13 @@ def random_rotate(image, label):
 
 
 class RandomGenerator(object):
-    def __init__(self, output_size):
+    def __init__(self, output_size, encoder=False):
         self.output_size = output_size
+        self.encoder=encoder
 
     def __call__(self, sample):
         image, label = sample['image'], sample['label']
-
+        label[label > 3] = 0
         if random.random() > 0.5:
             image, label = random_rot_flip(image, label)
         elif random.random() > 0.5:
@@ -44,12 +45,15 @@ class RandomGenerator(object):
             #label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
         image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
         label = torch.from_numpy(label.astype(np.float32))
-        sample = {'image': image, 'label': label.long()}
+        if not self.encoder:
+            sample = {'image': image, 'label': label.long()}
+        else:
+            sample = {'image': image, 'label': label}
         return sample
 
 
-class Synapse_dataset(Dataset):
-    def __init__(self, base_dir, list_dir, split, transform=None):
+class Lung_dataset(Dataset):
+    def __init__(self, base_dir, split='train', transform=None):
         self.transform = transform  # using transform in torch!
         self.split = split
         self.sample_list = os.listdir(base_dir + '/mask')
@@ -58,20 +62,18 @@ class Synapse_dataset(Dataset):
     def __len__(self):
         return len(self.sample_list)
     def __getitem__(self, idx):
-        # if self.split == "train":
-        #     slice_name = self.sample_list[idx].strip('\n')
-        #     data_path = os.path.join(self.data_dir, slice_name+'.npz')
-        #     data = np.load(data_path)
-        #     image, label = data['image'], data['label']
-        # else:
-        #     vol_name = self.sample_list[idx].strip('\n')
-        #     filepath = self.data_dir + "/{}.npy.h5".format(vol_name)
-        #     data = h5py.File(filepath)
-        #     image, label = data['image'][:], data['label'][:]
-        path_image=self.data_dir + '/image/' + self.sample_list[idx]
-        path_label=self.data_dir + '/mask/' + self.sample_list[idx]
-        image = cv2.imread(path_image,cv2.IMREAD_GRAYSCALE)
-        label = cv2.imread(path_label,cv2.IMREAD_GRAYSCALE)
+        if self.split == "train":
+            path_image = self.data_dir + '/image/' + self.sample_list[idx]
+            path_label = self.data_dir + '/mask/' + self.sample_list[idx]
+            image = cv2.imread(path_image, cv2.IMREAD_GRAYSCALE)
+            label = cv2.imread(path_label, cv2.IMREAD_GRAYSCALE)
+        else:
+            path_image = self.data_dir + '/image/' + self.sample_list[idx]
+            path_label = self.data_dir + '/mask/' + self.sample_list[idx]
+            image = cv2.imread(path_image, cv2.IMREAD_GRAYSCALE)
+            label = cv2.imread(path_label, cv2.IMREAD_GRAYSCALE)
+            image, label = image[:], label[:]
+
         sample = {'image': image, 'label': label}
         if self.transform:
             sample = self.transform(sample)
