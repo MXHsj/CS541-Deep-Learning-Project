@@ -10,91 +10,121 @@ import cv2
 import random
 import torch
 import numpy as np
+import elasticdeform
 from scipy import ndimage
+from scipy.ndimage import zoom
+
 from torch.utils.data import Dataset
-from PIL import Image
-from scipy.ndimage.interpolation import zoom
+
+ORIG_HEIGHT = 820
+ORIG_WIDTH = 1124
+INPUT_HEIGHT = round(ORIG_HEIGHT/4)  # 224, 128
+INPUT_WIDTH = round(ORIG_WIDTH/4)  # 224, 128
+# INPUT_HEIGHT = 224
+# INPUT_WIDTH = 224
 
 
-def random_rot_flip(image, label):
-  k = np.random.randint(0, 4)
-  image = np.rot90(image, k)
-  label = np.rot90(label, k)
-  axis = np.random.randint(0, 2)
-  image = np.flip(image, axis=axis).copy()
-  label = np.flip(label, axis=axis).copy()
+def _normalize_inputs(X):
+  if isinstance(X, np.ndarray):
+    Xs = [X]
+  elif isinstance(X, list):
+    Xs = X
+  else:
+    raise Exception('X should be a numpy.ndarray or a list of numpy.ndarrays.')
+
+  # check X inputs
+  assert len(Xs) > 0, 'You must provide at least one image.'
+  assert all(isinstance(x, np.ndarray) for x in Xs), 'All elements of X should be numpy.ndarrays.'
+  return Xs
+
+
+def _normalize_axis_list(axis, Xs):
+  if axis is None:
+    axis = [tuple(range(x.ndim)) for x in Xs]
+  elif isinstance(axis, int):
+    axis = (axis,)
+  if isinstance(axis, tuple):
+    axis = [axis] * len(Xs)
+  assert len(axis) == len(Xs), 'Number of axis tuples should match number of inputs.'
+  input_shapes = []
+  for x, ax in zip(Xs, axis):
+    assert isinstance(ax, tuple), 'axis should be given as a tuple'
+    assert all(isinstance(a, int) for a in ax), 'axis must contain ints'
+    assert len(ax) == len(axis[0]), 'All axis tuples should have the same length.'
+    assert ax == tuple(set(ax)), 'axis must be sorted and unique'
+    assert all(0 <= a < x.ndim for a in ax), 'invalid axis for input'
+    input_shapes.append(tuple(x.shape[d] for d in ax))
+  assert len(set(input_shapes)) == 1, 'All inputs should have the same shape.'
+  deform_shape = input_shapes[0]
+  return axis, deform_shape
+
+
+def random_rot_flip(image: np.ndarray, label: np.ndarray):
+  image = np.flip(image, axis=1).copy()  # horizontal flip
+  label = np.flip(label, axis=1).copy()
   return image, label
 
 
-def random_rotate(image, label):
-  angle = np.random.randint(-10, 10)
+def random_rotate(image: np.ndarray, label: np.ndarray):
+  angle = np.random.randint(-15, 15)
   image = ndimage.rotate(image, angle, order=0, reshape=False)
   label = ndimage.rotate(label, angle, order=0, reshape=False)
   return image, label
 
 
-def random_deform(image, label):
-  # TODO: elastic deformation
+def random_deform(image: np.ndarray, label: np.ndarray):
+  ''' perform random elastic deformation using 3x3 grid
+  '''
+  # image = elasticdeform.deform_random_grid(image, sigma=60, rotate=-5.05, points=3)
+  Xs = _normalize_inputs(image)
+  axis, deform_shape = _normalize_axis_list(None, Xs)
+  sigma = 5
+  points = 3
+  if not isinstance(points, (list, tuple)):
+    points = [points] * len(deform_shape)
+  displacement = np.random.randn(len(deform_shape), *points) * sigma
+  image = elasticdeform.deform_grid(image, displacement, axis=axis, rotate=-3.0)
+  label = elasticdeform.deform_grid(label, displacement, axis=axis, rotate=-3.0)
   return image, label
 
 
 class RandomGenerator(object):
-  def __init__(self, output_size,encoder):
-    self.output_size = output_size
-    self.encoder = encoder
-  def __call__(self, sample):
-    image, label = sample['image'], sample['label']
+  def __init__(self):
+    pass
 
+  def __call__(self, image, label):
+    output_size = image.shape
     if random.random() > 0.5:
       image, label = random_rot_flip(image, label)
     elif random.random() > 0.5:
       image, label = random_rotate(image, label)
+    # if random.random() > 0.2:
+    #   image, label = random_deform(image, label)
     x, y = image.shape
-    if x != self.output_size[0] or y != self.output_size[1]:
-      image = zoom(image, (self.output_size[0] / x, self.output_size[1] / y), order=3)  # why not 3?
-      #label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
-      if self.encoder:
-        label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=3)
-      else:
-        label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y, 3), order=0)
-    image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
-    label = torch.from_numpy(label.astype(np.float32))
-    sample = {'image': image, 'label': label.long()}
-    return sample
+    if x != output_size[0] or y != output_size[1]:
+      image = zoom(image, (output_size[0] / x, output_size[1] / y), order=3)
+      label = zoom(label, (output_size[0] / x, output_size[1] / y), order=3)
+    return image, label
 
 
 class LUSDataset(Dataset):
-  def __init__(self, use_patient_data=True,encoder=True):
+  def __init__(self, use_patient_data=True, encoder=True, transform=None):
     """ 
     :use_patient_data:
     """
-    self.encoder=encoder
+    self.encoder = encoder
+    self.transform = transform
     if use_patient_data:
       if encoder:
-        print('load patient data')
-        self.img_dir = './dataset_patient_nolabel/image/'
-        self.msk_dir = './dataset_patient_nolabel/image/'
+        self.img_dir = os.path.dirname(__file__) + '/../dataset_patient_nolabel/image/'
+        self.msk_dir = os.path.dirname(__file__) + '/../dataset_patient_nolabel/image/'
       else:
-        self.img_dir = './dataset_patient/image/'
-        self.msk_dir = './dataset_patient/mask_merged/'
-    self.sample_list=os.listdir(self.msk_dir)
+        self.img_dir = os.path.dirname(__file__) + '/../dataset_patient/image/'
+        self.msk_dir = os.path.dirname(__file__) + '/../dataset_patient/mask_merged/'
+    self.sample_list = os.listdir(self.msk_dir)
 
-    self.INPUT_HEIGHT = 224
-    self.INPUT_WIDTH = 224
-
-  def preprocess(self, frame, isMsk=False):
-    x,y=frame.shape
-    processed = zoom(frame, (self.INPUT_HEIGHT / x, self.INPUT_WIDTH / y), order=3)
-    if isMsk:
-      processed[processed > 2] = 0  # force two classes
-    processed_np = processed.copy()
-    if not isMsk:
-      if processed_np.ndim == 2:
-        processed_np = processed_np[np.newaxis, ...]
-      else:
-        processed_np = processed_np.transpose((2, 0, 1))
-      processed_np = processed_np / 255  # normalize
-    return processed_np
+    # self.INPUT_HEIGHT = 224
+    # self.INPUT_WIDTH = 224
 
   def __len__(self):
     return len(os.listdir(self.msk_dir))
@@ -102,19 +132,38 @@ class LUSDataset(Dataset):
   def __getitem__(self, idx):
     # print(self.img_dir+img_names[idx])
     # print(self.msk_dir+msk_names[idx])
-    msk = cv2.imread(self.msk_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
     img = cv2.imread(self.img_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
-    img = self.preprocess(img)
+    msk = cv2.imread(self.msk_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
     if self.encoder:
+      img = self.preprocess(img)
       msk = self.preprocess(msk)
     else:
+      if self.transform is not None:
+        img, msk = self.transform(img, msk)
+      img = self.preprocess(img)
       msk = self.preprocess(msk, isMsk=True)
-    #print(f'msk max val: {np.max(msk)}')
 
     return {
         'image': torch.as_tensor(img.copy()).float().contiguous(),
         'mask': torch.as_tensor(msk.copy()).long().contiguous()
     }
+
+  def preprocess(self, frame, isMsk=False):
+    ''' preprocess input image and mask
+    '''
+    processed = cv2.resize(frame, (INPUT_WIDTH, INPUT_HEIGHT))
+    # x, y = frame.shape
+    # processed = zoom(frame, (self.INPUT_HEIGHT / x, self.INPUT_WIDTH / y), order=3)
+
+    if isMsk:
+      processed[processed > 2] = 0  # force two classes
+    if not isMsk:
+      if processed.ndim == 2:
+        processed = processed[np.newaxis, ...]
+      else:
+        processed = processed.transpose((2, 0, 1))
+      processed = processed / 255  # normalize
+    return processed
 
   def view_item(self, idx):
     ...
