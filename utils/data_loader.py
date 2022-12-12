@@ -18,10 +18,10 @@ from torch.utils.data import Dataset
 
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
-INPUT_HEIGHT = round(ORIG_HEIGHT/4)  # 224, 128
-INPUT_WIDTH = round(ORIG_WIDTH/4)  # 224, 128
-# INPUT_HEIGHT = 224
-# INPUT_WIDTH = 224
+INPUT_HEIGHT = 224
+INPUT_WIDTH = 224
+# INPUT_HEIGHT = round(ORIG_HEIGHT/4)
+# INPUT_WIDTH = round(ORIG_WIDTH/4)
 
 
 def _normalize_inputs(X):
@@ -137,16 +137,20 @@ class LUSDataset(Dataset):
     if self.encoder:
       img = self.preprocess(img)
       msk = self.preprocess(msk)
+      sample = {
+          'image': torch.as_tensor(img.copy()).float().contiguous(),
+          'mask': torch.as_tensor(msk.copy()).float().contiguous()  # use same type
+      }
     else:
       if self.transform is not None:
         img, msk = self.transform(img, msk)
       img = self.preprocess(img)
       msk = self.preprocess(msk, isMsk=True)
-
-    return {
-        'image': torch.as_tensor(img.copy()).float().contiguous(),
-        'mask': torch.as_tensor(msk.copy()).long().contiguous()
-    }
+      sample = {
+          'image': torch.as_tensor(img.copy()).float().contiguous(),
+          'mask': torch.as_tensor(msk.copy()).long().contiguous()
+      }
+    return sample
 
   def preprocess(self, frame, isMsk=False):
     ''' preprocess input image and mask

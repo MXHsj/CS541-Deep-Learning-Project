@@ -72,7 +72,7 @@ class OutConv(nn.Module):
   def __init__(self, in_channels, out_channels, encoder=True):
     super(OutConv, self).__init__()
     self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-    self.encoder=encoder
+    self.encoder = encoder
 
   def forward(self, x):
     # return self.conv(x)
@@ -80,6 +80,7 @@ class OutConv(nn.Module):
       return F.softmax(self.conv(x), dim=1)  # normalize class probabilities
     else:
       return self.conv(x)
+
 
 class UNet(nn.Module):
   def __init__(self, n_channels, n_classes, encoder=True, bilinear=False):

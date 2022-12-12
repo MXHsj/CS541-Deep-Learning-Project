@@ -6,6 +6,7 @@
 # version:
 # =======================================================================
 import os
+import cv2
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -21,7 +22,7 @@ from unet.model import UNet
 from utils.data_loader import LUSDataset, RandomGenerator
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
-from utils.vis import tensor2array, tensor2PIL, plot_segmentation
+from utils.vis import tensor2array, plot_segmentation
 
 dir_checkpoint = Path('./checkpoints/')
 
@@ -57,10 +58,10 @@ def train_net(net,
         Mixed Precision: {amp}''')
 
   # ========== Set up the optimizer, loss, learning rate scheduler, k-fold ==========
-  L2_reg = 1e-8  # 1e-8
-  optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=L2_reg, momentum=0.9)
-  # optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)  # goal: maximize Dice score
+  # L2_reg = 1e-8  # 1e-8
+  # optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=L2_reg, momentum=0.9)
+  optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+  scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=3)  # goal: maximize Dice score
   grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
   criterion = nn.CrossEntropyLoss()
   global_step = 0
@@ -76,15 +77,14 @@ def train_net(net,
       for batch in train_loader:
         images = batch['image']
         masks_true = batch['mask']
-        # print(f"image shape: {images.shape}")
 
         assert images.shape[1] == net.n_channels, \
             f'Network has been defined with {net.n_channels} input channels, ' \
             f'but loaded images have {images.shape[1]} channels. Please check that ' \
             'the images are loaded correctly.'
 
-        images = images.to(device=device, dtype=torch.float32)
-        masks_true = masks_true.to(device=device, dtype=torch.long)
+        images = images.to(device=device)
+        masks_true = masks_true.to(device=device)
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
@@ -129,10 +129,10 @@ def train_net(net,
             tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
             image = tensor2array(images[0].float())
             if encoder:
-              # mask_true = tensor2PIL(255 * masks_true[0].float(), device=device)
-              # mask_pred = tensor2PIL(255 * masks_pred.argmax(dim=1)[0].float(), device=device)
               mask_true = tensor2array(masks_true[0].float())
               mask_pred = tensor2array(masks_pred[0].float())
+              print(np.sum(mask_true))
+              # print(mask_pred)
             else:
               mask_true = tensor2array(masks_true[0].float())
               mask_pred = tensor2array(masks_pred.argmax(dim=1)[0].float())
@@ -158,11 +158,11 @@ def train_net(net,
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
   parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
-  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
-  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4, help='Learning rate', dest='lr')
+  parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=1, help='Batch size')
+  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=4e-4, help='Learning rate', dest='lr')
   parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
   parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
-  parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
+  parser.add_argument('--validation', '-v', dest='val', type=float, default=30.0,
                       help='Percent of the data that is used as validation (0-100)')
   parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
   parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
@@ -176,32 +176,22 @@ if __name__ == '__main__':
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   print(f"Using device {device}")
 
-  # Change here to adapt to your data
-  # n_channels=3 for RGB images
-  # n_channels=1 for grey images
-  # n_classes is the number of probabilities you want to get per pixel
-  net_encoder = UNet(n_channels=1, n_classes=1, encoder=True, bilinear=args.bilinear)
-
-  print(f'''Network:\n
-        \t{net_encoder.n_channels} input channels\n
-        \t{net_encoder.n_classes} output channels (classes)\n
-        \t{"Bilinear" if net_encoder.bilinear else "Transposed conv"} upscaling''')
-
-  if args.load:
-    net_encoder.load_state_dict(torch.load(args.load, map_location=device))
-    print(f"Model loaded from {args.load}")
-
-  net_encoder.to(device=device)
-  unload = False   # set to true if training encoder only
-  if unload:
+  isTrainEncoder = False   # set to true if training encoder only
+  if isTrainEncoder:
     print('------------------------------train encoder---------------------------------')
+    net_encoder = UNet(n_channels=1, n_classes=1, encoder=True, bilinear=args.bilinear)
+    print(f'''Network:\n
+      \t{net_encoder.n_channels} input channels\n
+      \t{net_encoder.n_classes} output channels (classes)\n
+      \t{"Bilinear" if net_encoder.bilinear else "Transposed conv"} upscaling''')
+    net_encoder.to(device=device)
     try:
       train_net(net=net_encoder,
-                epochs=args.epochs,
-                batch_size=args.batch_size,
-                learning_rate=args.lr,
+                epochs=10,  # args.epochs
+                batch_size=4,
+                learning_rate=1e-5,
                 device=device,
-                val_percent=args.val / 100,
+                val_percent=10/100,
                 amp=args.amp,
                 encoder=True)
     except KeyboardInterrupt:
@@ -210,9 +200,13 @@ if __name__ == '__main__':
       # logging.info('Saved interrupt')
       raise
   else:
-    net_encoder = torch.load(os.path.dirname(__file__) + '/checkpoints/Truecheckpoint_epoch5.pth')
     print('------------------------------train decoder---------------------------------')
-    net_decoder = UNet(n_channels=1, n_classes=4, encoder=False, bilinear=args.bilinear)
+    net_encoder = torch.load(os.path.dirname(__file__) + '/checkpoints/Truecheckpoint_epoch10.pth')
+    net_decoder = UNet(n_channels=1, n_classes=args.classes, encoder=False, bilinear=args.bilinear)
+    print(f'''Network:\n
+      \t{net_decoder.n_channels} input channels\n
+      \t{net_decoder.n_classes} output channels (classes)\n
+      \t{"Bilinear" if net_decoder.bilinear else "Transposed conv"} upscaling''')
     net_decoder.to(device=device)   # force tensors on same device
 
     for i, (name, parameters) in enumerate(net_decoder.named_parameters()):

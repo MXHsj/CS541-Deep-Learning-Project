@@ -1,11 +1,10 @@
 # =======================================================================
 # file name:    infer.py
-# description:
+# description:  real-time inference
 # authors:      Xihan Ma, Mingjie Zeng, Xiaofan Zhou
 # date:         2022-11-13
 # version:
 # =======================================================================
-# TODO: implement real-time inference in time-series
 
 import cv2
 import time
