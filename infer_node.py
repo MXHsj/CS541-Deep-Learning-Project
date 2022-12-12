@@ -24,8 +24,8 @@ class LungUltrasoundSegmentServer:
 
   def __init__(self, isVis=True, freq=60) -> None:
     # ========== params ==========
-    self.IMG_WIDTH = 256            # image width for inference
-    self.IMG_HEIGHT = 256           # image height for inference
+    self.IMG_WIDTH = 224            # image width for inference
+    self.IMG_HEIGHT = 224           # image height for inference
     self.IMG_DISP_WIDTH = 640       # image width for display
     self.IMG_DISP_HEIGHT = 480      # image height for display
     self.isVis = isVis              # turn on/off rt visualization
@@ -80,8 +80,8 @@ class LungUltrasoundSegmentServer:
         input = array2tensor(input, device=self.device)
         pred = self.net(input)
         pred = tensor2array(pred)
-        self.msk_bright = cv2.resize(pred[1, :, :]*255, (self.IMG_DISP_WIDTH, self.IMG_DISP_HEIGHT))
-        self.msk_dark = cv2.resize(pred[2, :, :]*255, (self.IMG_DISP_WIDTH, self.IMG_DISP_HEIGHT))
+        self.msk_bright = cv2.resize((pred[1, :, :] > 0.6).astype(np.uint8)*255, (self.IMG_DISP_WIDTH, self.IMG_DISP_HEIGHT))
+        self.msk_dark = cv2.resize((pred[2, :, :] > 0.6).astype(np.uint8)*255, (self.IMG_DISP_WIDTH, self.IMG_DISP_HEIGHT))
         print(f'time elapsed: {time.perf_counter()-start} sec')  # benchmarking
         key = cv2.waitKey(2)
         if key == ord('q'):

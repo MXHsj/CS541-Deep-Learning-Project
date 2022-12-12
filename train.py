@@ -69,7 +69,7 @@ def train_net(net,
   loss_dice_rec = []
   loss_ce_rec = []
 
-  splits=KFold(n_splits=5,shuffle=True,random_state=42)
+  splits = KFold(n_splits=5, shuffle=True, random_state=42)
 
   # ========== Begin training ==========
   for epoch in range(1, epochs+1):
@@ -80,20 +80,17 @@ def train_net(net,
         images = batch['image']
         masks_true = batch['mask']
 
-        print(f"image shape: {images.shape}")
-
         assert images.shape[1] == net.n_channels, \
             f'Network has been defined with {net.n_channels} input channels, ' \
             f'but loaded images have {images.shape[1]} channels. Please check that ' \
             'the images are loaded correctly.'
 
-        images = images.to(device=device, dtype=torch.float32)
-        masks_true = masks_true.to(device=device, dtype=torch.long)
+        images = images.to(device=device)
+        masks_true = masks_true.to(device=device)
 
         with torch.cuda.amp.autocast(enabled=amp):
           masks_pred = net(images)
           # print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
-          # print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
           loss_CE = criterion(masks_pred, masks_true)
           loss_dice = dice_loss(masks_pred.float(),
                                 F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
@@ -108,9 +105,6 @@ def train_net(net,
 
         pbar.update(images.shape[0])
         global_step += 1
-
-        print(f"step: {global_step}")
-        print(f"epoch: {epoch}")
         pbar.set_postfix(**{'loss (batch)': loss.item()})
 
         # ===== Evaluation round =====
@@ -141,7 +135,7 @@ def train_net(net,
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
       torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
       print(f"Checkpoint {epoch} saved!")
-  
+
   fig = plt.figure(figsize=(10, 7))
   plt.plot(np.arange(len(val_score_rec)), val_score_rec, label='dice score')
   plt.plot(np.arange(len(loss_dice_rec)), loss_dice_rec, label="dice loss")
@@ -152,7 +146,7 @@ def train_net(net,
 
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
+  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=6, help='Number of epochs')
   parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=1, help='Batch size')
   parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=2e-5,
                       help='Learning rate', dest='lr')
