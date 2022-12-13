@@ -26,16 +26,16 @@ class Message2Images():
     self.loop()
 
   def crop_frame(self, image: np.array) -> np.array:
-    x = 100                     # lateral start
-    y = 0                       # axial start
-    w = self.IMG_ORIG_WIDTH-x   # width
-    h = self.IMG_ORIG_HEIGHT    # height
-    return image[y:y+h, x:x+w]
+    # crop top and bottom part
+    image = image[70:-1, :]
+    image = image[0:-1-35, :]
+    return image
 
   def save_frame(self, frame2save: np.array) -> None:
     save_path = os.path.dirname(__file__) + 'image/'
     file_tag = 'xm-frame' + str(self.frame_count)
-    file_name = save_path + file_tag+'.jpg'
+    file_name = save_path + file_tag + '.jpg'
+    frame2save = self.crop_frame(frame2save)
     cv2.imwrite(file_name, frame2save)
     return file_name
 

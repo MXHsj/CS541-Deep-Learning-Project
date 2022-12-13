@@ -93,7 +93,7 @@ def plot_segmentation(out_file_tag: str, image, mask, pred_mask) -> None:
   # showing image
   plt.imshow(pred_mask, cmap='gray')
   plt.axis('off')
-  plt.title("Pred_mask")
+  plt.title("Pred mask")
 
   plt.savefig(save_path + out_file_tag + '.png')
   plt.close(fig)

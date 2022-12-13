@@ -101,6 +101,19 @@ class UNet(nn.Module):
     self.up4 = Up(128, 64, bilinear)
     self.outc = OutConv(64, n_classes, encoder=encoder)
 
+    # # ========== baseline model ==========
+    # self.inc = DoubleConv(n_channels, 16)
+    # self.down1 = Down(16, 32)
+    # self.down2 = Down(32, 64)
+    # self.down3 = Down(64, 128)
+    # factor = 2 if bilinear else 1
+    # self.down4 = Down(128, 256 // factor)
+    # self.up1 = Up(256, 128 // factor, bilinear)
+    # self.up2 = Up(128, 64 // factor, bilinear)
+    # self.up3 = Up(64, 32 // factor, bilinear)
+    # self.up4 = Up(32, 16, bilinear)
+    # self.outc = OutConv(16, n_classes)
+
   def forward(self, x):
     #print(f"input type: {type(x)}")
     x1 = self.inc(x)

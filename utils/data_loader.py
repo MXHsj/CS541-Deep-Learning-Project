@@ -18,10 +18,10 @@ from torch.utils.data import Dataset
 
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
-INPUT_HEIGHT = 224
-INPUT_WIDTH = 224
-# INPUT_HEIGHT = round(ORIG_HEIGHT/4)
-# INPUT_WIDTH = round(ORIG_WIDTH/4)
+# INPUT_HEIGHT = 224
+# INPUT_WIDTH = 224
+INPUT_HEIGHT = round(ORIG_HEIGHT/4)
+INPUT_WIDTH = round(ORIG_WIDTH/4)
 
 
 def _normalize_inputs(X):
@@ -66,7 +66,7 @@ def random_rot_flip(image: np.ndarray, label: np.ndarray):
 
 
 def random_rotate(image: np.ndarray, label: np.ndarray):
-  angle = np.random.randint(-15, 15)
+  angle = np.random.randint(-10, 10)
   image = ndimage.rotate(image, angle, order=0, reshape=False)
   label = ndimage.rotate(label, angle, order=0, reshape=False)
   return image, label
@@ -96,7 +96,7 @@ class RandomGenerator(object):
     output_size = image.shape
     if random.random() > 0.5:
       image, label = random_rot_flip(image, label)
-    elif random.random() > 0.5:
+    if random.random() > 0.5:
       image, label = random_rotate(image, label)
     # if random.random() > 0.2:
     #   image, label = random_deform(image, label)
