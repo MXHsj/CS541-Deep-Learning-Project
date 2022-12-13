@@ -86,6 +86,10 @@ def random_deform(image: np.ndarray, label: np.ndarray):
   return image, label
 
 
+def get_pleural_area(img):
+  return (img[:300, 238:880])
+
+
 class RandomGenerator():
   def __init__(self):
     pass
@@ -107,18 +111,19 @@ class RandomGenerator():
 
 
 class LUSDataset(Dataset):
-  def __init__(self, sizefit2model=True, patient_data=False, transform=None):
+  def __init__(self, trainID=0, transform=None):
     """ 
-    :param fit2model:             shrink image to fit model input size
-    :param use_patient_data:
+    :param:
+    :param trainID: 0 -> train rib shadow; 1 -> train pleural line
     """
+    self.trainID = trainID
     self.transform = transform
-    self.sizefit2model = sizefit2model
-    if patient_data:
-      print('load patient data')
-      self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
+
+    self.img_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/image/')
+    if self.trainID == 0:
+      self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/rib_shadow/')
+    elif self.trainID == 1:
       self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/pleural_line/')
-      # self.msk_dir = os.path.join(os.path.dirname(__file__), '../dataset_patient/mask/rib_shadow/')
     # assert (len(os.listdir(self.img_dir)) == len(os.listdir(self.msk_dir)))
 
   def __len__(self):
@@ -127,8 +132,6 @@ class LUSDataset(Dataset):
   def __getitem__(self, idx):
     img_names = os.listdir(self.img_dir)
     msk_names = os.listdir(self.msk_dir)
-    # print(self.img_dir+img_names[idx])
-    # print(self.msk_dir+msk_names[idx])
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
     try:
       msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
@@ -145,29 +148,26 @@ class LUSDataset(Dataset):
     img = self.preprocess(img)              # single channel, grey scale
     msk = self.preprocess(msk, isMsk=True)  # single channel, multiple labels
 
-    # print(f'msk max val: {np.max(msk)}')
-
     return {'image': torch.as_tensor(img.copy()).float().contiguous(),
             'mask': torch.as_tensor(msk.copy()).long().contiguous()}
 
   def preprocess(self, frame: np.ndarray, isMsk=False):
     ''' preprocess input image and mask
     '''
-    if self.sizefit2model:
-      processed = cv2.resize(frame, (INPUT_WIDTH, INPUT_HEIGHT))
+    if self.trainID == 1:
+      processed = get_pleural_area(frame)  # crop image
     else:
       processed = frame.copy()
+    processed = cv2.resize(processed, (INPUT_WIDTH, INPUT_HEIGHT))
+    processed = processed / 255
 
     if isMsk:
-      processed = processed / 255
-      processed[processed > 0.3] = 1  # limit class label range
-
-    if not isMsk:
+      processed[processed > 0.2] = 1  # limit class label range
+    else:
       if processed.ndim == 2:
         processed = processed[np.newaxis, ...]
       else:
         processed = processed.transpose((2, 0, 1))
-      processed = processed / 255  # normalize
     return processed
 
   def view_item(self, idx):
