@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 
+import cv2
 import numpy as np
 from PIL import Image
 import matplotlib
@@ -62,7 +63,7 @@ def tensor2PIL(tensor: torch.tensor, device=torch.device('cuda')) -> Image:
   return image
 
 
-def plot_segmentation(out_file_tag: str, image: Image, mask: Image, pred_mask: Image) -> None:
+def plot_segmentation(out_file_tag: str, image, mask, pred_mask) -> None:
   save_path = './training_log/'
   # create figure
   fig = plt.figure(figsize=(10, 7))
@@ -83,7 +84,9 @@ def plot_segmentation(out_file_tag: str, image: Image, mask: Image, pred_mask: I
   fig.add_subplot(rows, columns, 2)
 
   # showing image
-  plt.imshow(mask, cmap='gray')
+  merge = cv2.addWeighted(image, 0.4, mask, 0.6, 0.1)
+  plt.imshow(merge, cmap='gray')
+  # plt.imshow(mask, cmap='gray')
   plt.axis('off')
   plt.title("True mask")
 

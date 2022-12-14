@@ -20,7 +20,7 @@ from unet.model import UNet
 from utils.data_loader import LUSDataset, RandomGenerator
 from utils.dice_score import dice_loss
 from utils.evaluate import evaluate_dice
-from utils.vis import tensor2PIL, plot_segmentation
+from utils.vis import tensor2array, plot_segmentation
 
 dir_checkpoint = Path('./checkpoints/')
 
@@ -60,22 +60,23 @@ def train_net(net,
   # L2_reg = 1e-8  # 1e-8
   # optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=L2_reg, momentum=0.9)
   optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.01)
+  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.4)
   # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=3)  # goal: maximize Dice score
   grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-  criterion = nn.CrossEntropyLoss()
+  criterion = nn.CrossEntropyLoss(weight=torch.tensor([1., 0.]).to(device=device))
+  # criterion = nn.CrossEntropyLoss()
   global_step = 0
 
   val_score_rec = []
   loss_dice_rec = []
   loss_ce_rec = []
+  val_max = 0.
 
   # ========== Begin training ==========
   for epoch in range(1, epochs+1):
     net.train()
     with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
       for batch in train_loader:
-        # batch = random_generator(batch) # data augmentation
         images = batch['image']
         masks_true = batch['mask']
         assert images.shape[1] == net.n_channels, \
@@ -92,7 +93,7 @@ def train_net(net,
           loss_dice = dice_loss(masks_pred.float(),
                                 F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
                                 multiclass=True)
-          loss = loss_CE + loss_dice
+          loss = 0.1*loss_CE + loss_dice
           # print(f'CE loss: {loss_CE}, dice loss: {loss_dice}, total loss: {loss}')
 
         optimizer.zero_grad(set_to_none=True)
@@ -118,19 +119,20 @@ def train_net(net,
                   Epoch: {epoch}
             ''')
             # # ====== save figures ======
-            image = tensor2PIL(images[0].float(), device=device)
-            mask_true = tensor2PIL(masks_true[0].float(), device=device)
-            mask_pred = tensor2PIL(masks_pred.argmax(dim=1)[0].float(), device=device)
+            image = tensor2array(images[0].float())
+            mask_true = tensor2array(masks_true[0].float())
+            mask_pred = tensor2array(masks_pred.argmax(dim=1)[0].float())
             tag = 'epoch_' + str(epoch) + '_step_' + str(global_step)
-            plot_segmentation(tag, image, mask_true, mask_pred)
-            # # ==========================
             loss_ce_rec.append(loss_CE.item())
             loss_dice_rec.append(loss_dice.item())
             val_score_rec.append(val_score.item())
+            val_max = val_score.item() if val_score.item() > val_max else val_max
+            plot_segmentation(tag, image, mask_true, mask_pred)
+            # # ==========================
 
     if save_checkpoint:
       Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
-      torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
+      torch.save(net.state_dict(), str(dir_checkpoint / f'feat{trainID}_checkpoint_epoch{epoch}.pth'))
       print(f"Checkpoint {epoch} saved!")
 
   fig = plt.figure(figsize=(10, 7))
@@ -139,13 +141,14 @@ def train_net(net,
   plt.legend()
   plt.savefig('training_log/loss_curve.png')
   plt.close(fig)
+  print(f'best validation accuracy: {val_max}')
 
 
 def get_args():
   parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=25, help='Number of epochs')
+  parser.add_argument('--epochs', '-e', metavar='E', type=int, default=40, help='Number of epochs')
   parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=4, help='Batch size')
-  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-3,
+  parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-4,
                       help='Learning rate', dest='lr')
   parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
   parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
@@ -163,7 +166,6 @@ if __name__ == '__main__':
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   print(f"Using device {device}")
   net = UNet(n_channels=1, n_classes=args.classes, bilinear=args.bilinear)
-
   print(f'''Network:\n
         \t{net.n_channels} input channels\n
         \t{net.n_classes} output channels (classes)\n
@@ -176,7 +178,7 @@ if __name__ == '__main__':
 
   net.to(device=device)
 
-  trainID = 0  # 0 -> rib shadow; 1 -> pleural line
+  trainID = 1  # 0 -> rib shadow; 1 -> pleural line
   try:
     train_net(net=net,
               epochs=args.epochs,

@@ -12,12 +12,12 @@ import torch
 import numpy as np
 import elasticdeform
 from scipy import ndimage
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 
 from torch.utils.data import Dataset
 
-INPUT_HEIGHT = 128
-INPUT_WIDTH = 128
+INPUT_HEIGHT = 224  # 128
+INPUT_WIDTH = 224  # 128
 ORIG_HEIGHT = 820
 ORIG_WIDTH = 1124
 
@@ -98,7 +98,7 @@ class RandomGenerator():
     output_size = image.shape
     if random.random() > 0.5:
       image, label = random_rot_flip(image, label)
-    elif random.random() > 0.5:
+    if random.random() > 0.5:
       image, label = random_rotate(image, label)
     # if random.random() > 0.2:
     #   image, label = random_deform(image, label)
@@ -132,14 +132,17 @@ class LUSDataset(Dataset):
   def __getitem__(self, idx):
     img_names = os.listdir(self.img_dir)
     msk_names = os.listdir(self.msk_dir)
+    img_names.sort()
+    msk_names.sort()
     img = cv2.imread(self.img_dir+img_names[idx], cv2.IMREAD_GRAYSCALE)
+    # TODO: skip training if no rib shadow mask exists
     try:
       msk = cv2.imread(self.msk_dir+msk_names[idx], cv2.IMREAD_GRAYSCALE)
     except Exception as e:
-      print(f'loading mask: {e}\n')
+      print(f'loading mask: no mask\n')
       msk = np.zeros_like(img)
-    # print(f"dim of img: {img.shape}")
-    # print(f"dim of mask: {msk.shape}")
+    # print(f"img dir: {self.img_dir+img_names[idx]}")
+    # print(f"msk dir: {self.msk_dir+msk_names[idx]}")
     if self.transform is not None:
       img, msk = self.transform(img, msk)
 
@@ -158,6 +161,7 @@ class LUSDataset(Dataset):
       processed = get_pleural_area(frame)  # crop image
     else:
       processed = frame.copy()
+    # processed = frame.copy()
     processed = cv2.resize(processed, (INPUT_WIDTH, INPUT_HEIGHT))
     processed = processed / 255
 
