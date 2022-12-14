@@ -7,7 +7,25 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+# for resnet
+from torchvision import models
 
+# =========== ResNet ======================
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+base_model = models.resnet18(weights=None)
+base_model = base_model.to(device)
+# =========================================
+
+# ===============================================================
+# file name:    model.py
+# description:  naive U-Net implementation
+# author:
+# date:         2022-11-12
+# ===============================================================
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 class DoubleConv(nn.Module):
   """(convolution => [BN] => ReLU) * 2"""
@@ -28,20 +46,14 @@ class DoubleConv(nn.Module):
   def forward(self, x):
     return self.double_conv(x)
 
-
-class Down(nn.Module):
-  """Downscaling with maxpool then double conv"""
-
-  def __init__(self, in_channels, out_channels):
-    super().__init__()
-    self.maxpool_conv = nn.Sequential(
-        nn.MaxPool2d(2),
-        DoubleConv(in_channels, out_channels)
+def root_block(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 3, padding=1),
+        nn.BatchNorm2d(out_channels), 
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_channels, out_channels, 3, padding=1),
+        nn.BatchNorm2d(out_channels), 
     )
-
-  def forward(self, x):
-    return self.maxpool_conv(x)
-
 
 class Up(nn.Module):
   """Upscaling then double conv"""
@@ -58,66 +70,139 @@ class Up(nn.Module):
       self.conv = DoubleConv(in_channels, out_channels)
 
   def forward(self, x1, x2):
-    x1 = self.up(x1)
+    x1 = nn.functional.interpolate(x1, scale_factor=2, mode='bilinear', align_corners=True)
+    #x1 = self.up(x1)
     # input is CHW
     diffY = x2.size()[2] - x1.size()[2]
     diffX = x2.size()[3] - x1.size()[3]
     x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                     diffY // 2, diffY - diffY // 2])
-    x = torch.cat([x2, x1], dim=1)
+    x = torch.cat([x1, x2], dim=1)
     return self.conv(x)
-
-
+    
 class OutConv(nn.Module):
-  def __init__(self, in_channels, out_channels):
+  def __init__(self, in_channels, out_channels, encoder=True):
     super(OutConv, self).__init__()
     self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+    self.encoder = encoder
 
   def forward(self, x):
     # return self.conv(x)
-    return F.softmax(self.conv(x), dim=1)  # normalize class probabilities
+    if not self.encoder:
+      return F.softmax(self.conv(x), dim=1)  # normalize class probabilities
+    else:
+      return self.conv(x)
 
+# Define the UNet architecture
+class ResNetUNet(nn.Module):
 
-class UNet(nn.Module):
-  def __init__(self, n_channels, n_classes, bilinear=False):
-    super(UNet, self).__init__()
-    self.n_channels = n_channels
-    self.n_classes = n_classes
-    self.bilinear = bilinear
+    def __init__(self, n_channels, n_classes, encoder=True, bilinear=False):
+        super().__init__()
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
 
-    self.inc = DoubleConv(n_channels, 64)
-    self.down1 = Down(64, 128)
-    self.down2 = Down(128, 256)
-    self.down3 = Down(256, 512)
-    factor = 2 if bilinear else 1
-    self.down4 = Down(512, 1024 // factor)
-    self.up1 = Up(1024, 512 // factor, bilinear)
-    self.up2 = Up(512, 256 // factor, bilinear)
-    self.up3 = Up(256, 128 // factor, bilinear)
-    self.up4 = Up(128, 64, bilinear)
-    self.outc = OutConv(64, n_classes)
+        self.dconv_down1 = DoubleConv(n_channels, 64)
+        self.dconv_down11 = root_block(64, 64)
+        self.dconv_down2 = DoubleConv(64, 128)
+        self.dconv_down21 = root_block(128, 128)
+        self.dconv_down3 = DoubleConv(128, 256)
+        self.dconv_down31 = root_block(256, 256)
+        self.dconv_down4 = DoubleConv(256, 512)
+        self.dconv_down41 = root_block(512, 512)
 
-  def forward(self, x):
-    #print(f"input type: {type(x)}")
-    x1 = self.inc(x)
-    #print(f"x1 type: {type(x1)}")
-    x2 = self.down1(x1)
-    #print(f"x2 type: {type(x2)}")
-    x3 = self.down2(x2)
-    #print(f"x3 type: {type(x3)}")
-    x4 = self.down3(x3)
-    #print(f"x4 type: {type(x4)}")
-    x5 = self.down4(x4)
-    #print(f"x5 type: {type(x5)}")
-    x = self.up1(x5, x4)
-    #print(f"x up1 type: {type(x)}")
-    x = self.up2(x, x3)
-    #print(f"x up2 type: {type(x)}")
-    x = self.up3(x, x2)
-    #print(f"x up3 type: {type(x)}")
-    x = self.up4(x, x1)
-    #print(f"x up4 type: {type(x)}")
-    logits = self.outc(x)
-    #print(f"out type: {type(x)}")
-    #print(f"out: {logits}")
-    return logits
+        self.maxpool = nn.MaxPool2d(2)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.dconv_up3 = Up(256 + 512, 256)
+        self.dconv_up31 = root_block(256, 256)
+        self.dconv_up2 = Up(128 + 256, 128)
+        self.dconv_up21 = root_block(128, 128)
+        self.dconv_up1 = Up(128 + 64, 64)
+        self.dconv_up11 = root_block(64, 64)
+
+        self.conv_last = OutConv(64, n_classes, encoder=encoder)
+
+    def forward(self, x):
+        #print(f"input shape: {x.shape}")
+        conv1 = self.dconv_down1(x)
+        #print(f"conv1 shape: {conv1.shape}")
+        x = self.dconv_down11(conv1)
+        #print(f"dconv_down11 shape: {x.shape}")
+        x += conv1
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        x = self.maxpool(x)
+        #print(f"x shape: {x.shape}")
+
+        conv2 = self.dconv_down2(x)
+        #print(f"conv2 shape: {conv2.shape}")
+        x = self.dconv_down21(conv2)
+        #print(f"dconv_down21 shape: {x.shape}")
+        x += conv2
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        x = self.maxpool(x)
+        #print(f"x shape: {x.shape}")
+
+        conv3 = self.dconv_down3(x)
+        #print(f"conv3 shape: {conv3.shape}")
+        x = self.dconv_down31(conv3)
+        #print(f"dconv_down31 shape: {x.shape}")
+        x += conv3
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        x = self.maxpool(x)
+        #print(f"x shape: {x.shape}")
+
+        conv4 = self.dconv_down4(x)
+        #print(f"conv4 shape: {conv4.shape}")
+        x = self.dconv_down41(conv4)
+        #print(f"dconv_down41 shape: {x.shape}")
+        x += conv4
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        #print(f"x shape: {x.shape}")
+        #print("----------------------------------------------------")
+        deconv3 = self.dconv_up3(x, conv3)
+        #deconv3 = nn.functional.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
+        #print(f"deconv3 shape: {deconv3.shape}")
+        #deconv3 = torch.cat([deconv3, conv3], dim=1)
+        #print(f"deconv3 shape: {deconv3.shape}")
+        #uconv3 = self.dconv_up3(deconv3)
+        x = self.dconv_up31(deconv3)
+        #print(f"x shape: {x.shape}")
+        x += deconv3
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        #print(f"x shape: {x.shape}")
+
+        #print("----------------------------------------------------")
+        deconv2 = self.dconv_up2(x, conv2)
+        #print(f"deconv2 shape: {deconv2.shape}")
+        #deconv2 = nn.functional.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
+        #deconv2 = torch.cat([deconv2, conv2], dim=1)
+        #uconv2 = self.dconv_up2(deconv2)
+        x = self.dconv_up21(deconv2)
+        #print(f"x shape: {x.shape}")
+        x += deconv2
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        #print(f"x shape: {x.shape}")
+
+        #print("----------------------------------------------------")
+        deconv1 = self.dconv_up1(x, conv1)
+        #print(f"deconv1 shape: {deconv1.shape}")
+        #deconv1 = nn.functional.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
+        #deconv1 = torch.cat([deconv1, conv1], dim=1)
+        #uconv1 = self.dconv_up1(deconv1)
+        x = self.dconv_up11(deconv1)
+        #print(f"x shape: {x.shape}")
+        x += deconv1
+        #print(f"x shape: {x.shape}")
+        x = self.relu(x)
+        #print(f"x shape: {x.shape}")
+
+        out = self.conv_last(x)
+
+        return out
