@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 
 from unet.model import UNet
 from utils.data_loader import LUSDataset, RandomGenerator
@@ -40,8 +40,13 @@ def train_net(net,
   random_generator = RandomGenerator()  # for data augmentation
   dataset = LUSDataset(encoder=encoder, transform=random_generator)
   n_val = int(len(dataset) * val_percent)
-  n_train = len(dataset) - n_val
-  train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
+  n_train_all = len(dataset) - n_val
+  train_set_all, val_set = random_split(dataset, [n_train_all, n_val], generator=torch.Generator().manual_seed(0))
+
+  # ********** for experiment purpose **********
+  train_set = Subset(train_set_all, torch.arange(50))  # take partial training data
+  n_train = len(train_set)
+  # ********************************************
 
   loader_args = dict(batch_size=batch_size, num_workers=4, pin_memory=True)
   train_loader = DataLoader(train_set, shuffle=True, **loader_args)
@@ -94,7 +99,6 @@ def train_net(net,
           # print(f"mask shape: {masks_true.shape}, max val: {torch.max(masks_true[0])}")
           # print(f"pred mask shape: {masks_pred.shape}, max val: {torch.max(masks_pred[0,0,:,:])}")
           if not encoder:
-            # TODO: use ce loss only for background, test generalized dice loss
             loss_CE = criterion(masks_pred, masks_true)
             loss_dice = dice_loss(masks_pred.float(),
                                   F.one_hot(masks_true, net.n_classes).permute(0, 3, 1, 2).float(),
@@ -205,7 +209,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
       torch.save(net_encoder.state_dict(), str(dir_checkpoint / 'INTERRUPTED.pth'))
       print(f"Saved interrupt")
-      # logging.info('Saved interrupt')
       raise
   else:
     print('------------------------------train decoder---------------------------------')
@@ -217,10 +220,10 @@ if __name__ == '__main__':
       \t{"Bilinear" if net_decoder.bilinear else "Transposed conv"} upscaling''')
     net_decoder.to(device=device)   # force tensors on same device
 
-    # for i, (name, parameters) in enumerate(net_decoder.named_parameters()):
-    #   if i < 30:
-    #     parameters.requires_grad = False
-    #     parameters.data = net_encoder[name]  # was 'net_encoder.parameters()[name]'
+    for i, (name, parameters) in enumerate(net_decoder.named_parameters()):
+      if i < 30:
+        # parameters.requires_grad = False
+        parameters.data = net_encoder[name]  # was 'net_encoder.parameters()[name]'
     try:
       train_net(net=net_decoder,
                 epochs=args.epochs,
