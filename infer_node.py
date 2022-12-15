@@ -24,8 +24,8 @@ class LungUltrasoundSegmentServer:
 
   def __init__(self, isVis=True, freq=60) -> None:
     # ========== params ==========
-    self.IMG_WIDTH = 224            # image width for inference
-    self.IMG_HEIGHT = 224           # image height for inference
+    self.IMG_WIDTH = int(640/3)     # image width for inference
+    self.IMG_HEIGHT = int(480/3)    # image height for inference
     self.IMG_DISP_WIDTH = 640       # image width for display
     self.IMG_DISP_HEIGHT = 480      # image height for display
     self.isVis = isVis              # turn on/off rt visualization
@@ -36,7 +36,7 @@ class LungUltrasoundSegmentServer:
     print(f"Using device {self.device}")
     self.net = UNet(n_channels=1, n_classes=3, encoder=False, bilinear=False)
     self.net.to(device=self.device)
-    self.net.load_state_dict(torch.load('checkpoints/Falsecheckpoint_epoch5.pth'))
+    self.net.load_state_dict(torch.load('checkpoints/Falsecheckpoint_epoch74.pth'))
     # print(net.eval())
     # =================================
 
@@ -53,8 +53,16 @@ class LungUltrasoundSegmentServer:
     self.rate = rospy.Rate(freq)    # loop rate
     # =========================================
 
+  def crop_frame(self, image: np.array) -> np.array:
+    # crop top and bottom part
+    image = image[100:-1, :]
+    image = image[0:-1-50, :]
+    return image
+
   def clarius_us_cb(self, msg: Image) -> None:
     bmode_msg = CvBridge().imgmsg_to_cv2(msg, desired_encoding="passthrough")
+    bmode_msg = self.crop_frame(bmode_msg)
+    bmode_msg = cv2.resize(bmode_msg, (self.IMG_DISP_WIDTH, self.IMG_DISP_HEIGHT))
     self.bmode_raw = np.expand_dims(bmode_msg, axis=-1)
     self.bmode_rgb = cv2.cvtColor(bmode_msg, cv2.COLOR_GRAY2RGB)
 

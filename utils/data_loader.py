@@ -123,15 +123,10 @@ class LUSDataset(Dataset):
         self.msk_dir = os.path.dirname(__file__) + '/../dataset_patient/mask_merged/'
     self.sample_list = os.listdir(self.msk_dir)
 
-    # self.INPUT_HEIGHT = 224
-    # self.INPUT_WIDTH = 224
-
   def __len__(self):
     return len(os.listdir(self.msk_dir))
 
   def __getitem__(self, idx):
-    # print(self.img_dir+img_names[idx])
-    # print(self.msk_dir+msk_names[idx])
     img = cv2.imread(self.img_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
     msk = cv2.imread(self.msk_dir+self.sample_list[idx], cv2.IMREAD_GRAYSCALE)
     if self.encoder:

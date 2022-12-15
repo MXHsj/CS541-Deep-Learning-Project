@@ -44,7 +44,7 @@ def train_net(net,
   train_set_all, val_set = random_split(dataset, [n_train_all, n_val], generator=torch.Generator().manual_seed(0))
 
   # ********** for experiment purpose **********
-  train_set = Subset(train_set_all, torch.arange(50))  # take partial training data
+  train_set = Subset(train_set_all, torch.arange(250))  # take partial training data
   n_train = len(train_set)
   # ********************************************
 
