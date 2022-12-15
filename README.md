@@ -1,6 +1,6 @@
 # lung-ultrasound image segmentation
-This branch hosts stable model
+Attention U-Net multi-class segmentation
 
-## other branches
-- UNet:         naive U-Net implementation for multi-class segmentation
-- TransUNet:    trans-UNet implementation for multi-class segmentation
+## Usage
+- run ```train.py``` to train the model
+- run ```infer.py``` to repeatedly predict on one input image (pseudo real-time)
