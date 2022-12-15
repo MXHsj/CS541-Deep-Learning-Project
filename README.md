@@ -1,3 +1,5 @@
 # lung-ultrasound image segmentation
-This branch tests different models: TransUNet
+TransUNet multi-class segmentation
 
+## Usage
+- run ```train.py``` to train the model
